@@ -36,7 +36,7 @@ class LabelGenerator:
             logger.error(f"错误: 数据文件未找到于 {DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH}")
             return None
 
-    def has_risk_generate_label(self):
+    def has_risk_4_class_period_generate_label(self):
         """
         生成标签：如果未来7天内流产率超过0.0025，则标记为1，否则为0
         
@@ -44,6 +44,7 @@ class LabelGenerator:
             DataFrame: 包含标签列的特征数据
         """
         label = ColumnsConfig.HAS_RISK_LABEL
+        periods = [(1,7),(8,14),(15,21)]
 
         if self.calculate_data is None or len(self.calculate_data) == 0:
             logger.info("Label计算数据为空，无法生成标签")
@@ -71,32 +72,56 @@ class LabelGenerator:
             for index, row in farm_data.iterrows():
                 current_date = row[self.date_column]
                 
-                # 计算未来7天的日期范围
-                future_start = current_date + pd.Timedelta(days=1)  # 从下一天开始
-                future_end = current_date + pd.Timedelta(days=7)    # 到7天后结束
-                
-                # 筛选未来7天的数据
-                future_data = farm_data[
-                    (farm_data[self.date_column] >= future_start) & 
-                    (farm_data[self.date_column] <= future_end)
-                ]
-                
-                # 检查未来7天内是否有流产率超过阈值
-                if not future_data.empty:
-                    if (future_data['abortion_rate'] > 0.0025).any():
-                        self.calculate_data.loc[index, label] = 1
-                    else:
-                        self.calculate_data.loc[index, label] = 0
+                for period in periods:
+                    left, right = period[0], period[1] # 1-7天，8-14天，15-21天
+                    pre_label = ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right)
+                    # 计算未来7天的日期范围
+                    future_data = current_date + pd.Timedelta(days=right)  # 从下一天开始
+                    
+                    # 筛选未来7天的数据
+                    future_data = farm_data[(farm_data[self.date_column] == future_data)]
+                    
+                    # 检查未来7天内是否有流产率超过阈值
+                    if not future_data.empty:
+                        if future_data['abortion_rate'].iloc[0] >= 0.0025:
+                            self.calculate_data.loc[index, pre_label] = 1
+                        else:
+                            self.calculate_data.loc[index, pre_label] = 0
 
+        def make_label(row):
+            make_labels = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(period[0], period[1]) for period in periods]
+            if row[make_labels[0]] == 1:
+                return 1
+            elif row[make_labels[1]] == 1:
+                return 2
+            elif row[make_labels[2]] == 1:
+                return 3
+            else:
+                return 0
+
+        self.calculate_data[label] = self.calculate_data.apply(make_label, axis=1)
         self.index_data = pd.merge(self.index_data, self.calculate_data[[self.date_column, self.id_column, label]], on=[self.date_column, self.id_column], how='left')
+        self.calculate_data.to_csv(DataPathConfig.ABORTION_CALCULATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
         self.index_data.to_csv(DataPathConfig.NON_DROP_NAN_LABEL_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
         
         # 统计标签分布
         total_records = len(self.index_data)
-        risk_records = self.index_data[label].sum()
+        # 计算非零标签的数量（即风险记录总数 - 类别1+2+3）
+        risk_records = len(self.index_data[self.index_data[label] > 0])
         risk_percentage = (risk_records / total_records) * 100 if total_records > 0 else 0
-        
-        logger.info(f"标签生成完成：总记录数 {total_records}，有风险记录数 {risk_records} ({risk_percentage:.2f}%)")
+
+        # 分别统计各类别的记录数和占比
+        label_counts = self.index_data[label].value_counts().sort_index()
+        logger.info(f"标签分布：")
+        for lbl, count in label_counts.items():
+            percentage = (count / total_records) * 100
+            if lbl == 0:
+                logger.info(f"  无风险 (类别 {lbl}): {count} 条记录 ({percentage:.2f}%)")
+            else:
+                risk_type = "近期(1-7天)" if lbl == 1 else "中期(8-14天)" if lbl == 2 else "远期(15-21天)"
+                logger.info(f"  {risk_type} (类别 {lbl}): {count} 条记录 ({percentage:.2f}%)")
+
+        logger.info(f"标签生成完成：总记录数 {total_records}，所有风险记录数 {risk_records} ({risk_percentage:.2f}%)")
         logger.info(f"去除无标签数据前，数据量为：{len(self.index_data)}")
         self.index_data.dropna(subset=[label], inplace=True)  # 删除没有标签的记录
         logger.info(f"删除无标签的记录后，数据量为: {len(self.index_data)}")

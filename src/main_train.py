@@ -305,7 +305,7 @@ if __name__ == "__main__":
         interval_days=config.TRAIN_INTERVAL
     )
     logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_4_class_generate_label()
+    X, y = label_generator.has_risk_4_class_period_generate_label()
     logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
     
     # transformer
