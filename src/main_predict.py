@@ -29,7 +29,7 @@ from feature.gen_label import LabelGenerator
 from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
 from model.nfm import Has_Risk_NFM
-
+from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 # 设置浮点数显示为小数点后2位，抑制科学计数法
 # np.set_printoptions(precision=2, suppress=True)
 
@@ -157,6 +157,8 @@ if __name__ == "__main__":
     )
     logger.info("开始生成标签...")
     X, y = label_generator.has_risk_4_class_generate_label()
+    X.reset_index(drop=True, inplace=True)
+    y.reset_index(drop=True, inplace=True)
     predict_index_label = pd.concat([X, y], axis=1)
     logger.info(f"预测数据的索引为：{predict_index_label.columns}")
 
@@ -164,22 +166,27 @@ if __name__ == "__main__":
     if X is None:
         logger.error("特征数据加载失败，程序退出。")
         exit()
-    transformer = FeatureTransformer(
-        discrete_cols=ColumnsConfig.DISCRETE_COLUMNS,
-        continuous_cols=ColumnsConfig.CONTINUOUS_COLUMNS,
-        invariant_cols=ColumnsConfig.INVARIANT_COLUMNS,
-        model_discrete_cols=ColumnsConfig.MODEL_DISCRETE_COLUMNS,
-    )
-    transformer = transformer.load_params(config.TRANSFORMER_SAVE_PATH)
-    transform_dict = transformer.params
 
-    transformed_feature_df = transformer.transform(X.copy())
-    transformed_feature_df.to_csv(
-        DataPathConfig.TRANSFORMED_FEATURE_DATA_SAVE_PATH,
-        index=False,
-        encoding='utf-8-sig'
-    )
-    logger.info(f"trainsformed_feature_df数据字段为：{transformed_feature_df.columns}")
+    with open(config.TRANSFORMER_SAVE_PATH, "r+") as dump_file:
+        transform = AbortionPredictionTransformPipeline.from_json(dump_file.read())
+    transformed_feature_df = transform.transform(input_dataset=X)
+    # transformer = FeatureTransformer(
+    #     discrete_cols=ColumnsConfig.DISCRETE_COLUMNS,
+    #     continuous_cols=ColumnsConfig.CONTINUOUS_COLUMNS,
+    #     invariant_cols=ColumnsConfig.INVARIANT_COLUMNS,
+    #     model_discrete_cols=ColumnsConfig.MODEL_DISCRETE_COLUMNS,
+    # )
+    # transformer = transformer.load_params(config.TRANSFORMER_SAVE_PATH)
+    # transform_dict = transformer.params
+
+    # transformed_feature_df = transformer.transform(X.copy())
+    # transformed_feature_df.to_csv(
+    #     DataPathConfig.TRANSFORMED_FEATURE_DATA_SAVE_PATH,
+    #     index=False,
+    #     encoding='utf-8-sig'
+    # )
+    # logger.info(f"trainsformed_feature_df数据字段为：{transformed_feature_df.columns}")
+
     # 保存离散特征类别数用于embedding
     # discrete_class_num = transformer.discrete_column_class_count(transformed_feature_df)
     # logger.info(f"离散特征的类别数量: {discrete_class_num}")
@@ -192,9 +199,9 @@ if __name__ == "__main__":
 
     # 生成mask列
     transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
-
     transformed_masked_null_predict_X.fillna(0, inplace=True)  # 填充空值为0
     logger.info(f"data_transformed_masked_null数据字段为：{transformed_masked_null_predict_X.columns}")
+    
     predict_df = pd.concat([transformed_masked_null_predict_X, predict_y], axis=1)
     predict_df = predict_df.reset_index(drop=True)
     logger.info(f"预测数据的索引为：{predict_df.columns}")
@@ -203,7 +210,7 @@ if __name__ == "__main__":
         index=False,
         encoding='utf-8-sig'
     )
-    predict_index_df = transformed_feature_df[['stats_dt', 'pigfarm_dk']].reset_index(drop=True)
+
     # predict_index_df = predict_index_label[['stats_dt', 'pigfarm_dk', ColumnsConfig.HAS_RISK_LABEL]].reset_index(drop=True)
 
     # train_X, train_y = create_sequences(train_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
@@ -219,16 +226,19 @@ if __name__ == "__main__":
     logger.info("数据加载器准备完毕.")
 
     # --- 模型、损失函数、优化器 ---
+    feature_dict = transform.features.features
+    Categorical_feature = ColumnsConfig.DISCRETE_COLUMNS # 离散值字段
+    logger.info(f"pigfarm_dk类别数：{feature_dict[Categorical_feature[0]].category_encode.size}")
     params = {
         'model_discrete_columns': ColumnsConfig.MODEL_DISCRETE_COLUMNS,
         'model_continuous_columns': ColumnsConfig.MODEL_CONTINUOUS_COLUMNS,
         'dropout': config.DROPOUT,
 
-        'pigfarm_dk': len(transform_dict['discrete_mappings']['pigfarm_dk']['key2id']),
+        'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
         'month': 12,
         'is_single': 2,
     }
-    model = Has_Risk_MLP(params).to(config.DEVICE) # 等待模型实现
+    model = Has_Risk_NFM(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 

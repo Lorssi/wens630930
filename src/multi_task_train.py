@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 from configs.logger_config import logger_config
 from configs.feature_config import ColumnsConfig, DataPathConfig
 import config
-from dataset.dataset import HasRiskDataset
+from dataset.dataset import HasRiskDataset, MultiTaskDataset
 from utils.logger import setup_logger
 from utils.early_stopping import EarlyStopping
 from utils.save_csv import save_to_csv, read_csv
@@ -96,8 +96,11 @@ def split_data(data_transformed_masked_null, y):
 
     train_X = train_X[ColumnsConfig.feature_columns]
     test_X = test_X[ColumnsConfig.feature_columns]
-    train_y = train_y[[ColumnsConfig.HAS_RISK_LABEL]]
-    test_y = test_y[[ColumnsConfig.HAS_RISK_LABEL]]
+
+    periods = [(1, 7), (8, 14), (15, 21)]
+    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(start, end) for start, end in periods]
+    train_y = train_y[[ColumnsConfig.HAS_RISK_LABEL] + days_label_list]
+    test_y = test_y[[ColumnsConfig.HAS_RISK_LABEL] + days_label_list]
 
     return train_X, test_X, train_y, test_y
 
@@ -176,12 +179,18 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
     for epoch in range(num_epochs):
         model.train()
         train_loss = 0.0
-        for batch_idx, (features, targets) in enumerate(train_loader):
-            features, targets = features.to(device), targets.to(device)
+        for batch_idx, (features, has_risk_label, days_1_7, days_8_14, days_15_21) in enumerate(train_loader):
+            features, has_risk_label, days_1_7, days_8_14, days_15_21 = features.to(device), has_risk_label.to(device), days_1_7.to(device), days_8_14.to(device), days_15_21.to(device)
 
             optimizer.zero_grad()
-            outputs = model(features)
-            loss = criterion(outputs, targets)
+            has_risk_output, days_1_7_output, days_8_14_output, days_15_21_output = model(features)
+            has_risk_loss = criterion(has_risk_output, has_risk_label)
+            days_1_7_loss = criterion(days_1_7_output, days_1_7)
+            days_8_14_loss = criterion(days_8_14_output, days_8_14)
+            days_15_21_loss = criterion(days_15_21_output, days_15_21)
+
+            days_loss = days_1_7_loss + days_8_14_loss + days_15_21_loss
+            loss = has_risk_loss + days_loss
             loss.backward()
 
             # 添加梯度裁剪，设置最大范数为1.0
@@ -239,21 +248,28 @@ def eval(model, val_loader, criterion, device):
     all_probs = []
     
     with torch.no_grad():
-        for sequences, targets in val_loader:
-            sequences, targets = sequences.to(device), targets.to(device)
+        for sequences, has_risk_label, days_1_7, days_8_14, days_15_21 in val_loader:
+            sequences, has_risk_label, days_1_7, days_8_14, days_15_21 = sequences.to(device), has_risk_label.to(device), days_1_7.to(device), days_8_14.to(device), days_15_21.to(device)
             
             # 前向传播
-            outputs = model(sequences)
-            loss = criterion(outputs, targets)
+            has_risk_output, days_1_7_output, days_8_14_output, days_15_21_output = model(sequences)
+            has_risk_loss = criterion(has_risk_output, has_risk_label)
+            days_1_7_loss = criterion(days_1_7_output, days_1_7)
+            days_8_14_loss = criterion(days_8_14_output, days_8_14)
+            days_15_21_loss = criterion(days_15_21_output, days_15_21)
+
+            days_loss = days_1_7_loss + days_8_14_loss + days_15_21_loss
+            loss = has_risk_loss + days_loss
+
             val_loss += loss.item()
             
             # 获取预测结果
-            probs = torch.softmax(outputs, dim=1)  # 所有类别的概率
-            preds = torch.argmax(outputs, dim=1)
+            probs = torch.softmax(has_risk_output, dim=1)  # 所有类别的概率
+            preds = torch.argmax(has_risk_output, dim=1)
             
             # 收集结果
             all_preds.extend(preds.cpu().numpy())
-            all_targets.extend(targets.cpu().numpy())
+            all_targets.extend(has_risk_label.cpu().numpy())
             all_probs.extend(probs.cpu().numpy())
     
     # 计算平均损失
@@ -307,7 +323,7 @@ if __name__ == "__main__":
         interval_days=config.TRAIN_INTERVAL
     )
     logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_4_class_period_generate_label_alter()
+    X, y = label_generator.has_risk_4_class_period_generate_label()
     logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
     logger.info(f"X,y特征数据形状为：{X.shape}， 标签数据形状为：{y.shape}")
     
@@ -396,10 +412,12 @@ if __name__ == "__main__":
     # logger.info("数据预处理完成.")
 
     # 5. 创建 PyTorch Dataset 和 DataLoader
-    train_dataset = HasRiskDataset(train_df, label=ColumnsConfig.HAS_RISK_LABEL)
-    val_dataset = HasRiskDataset(val_df, label=ColumnsConfig.HAS_RISK_LABEL)
+    periods = [(1, 7), (8, 14), (15, 21)]
+    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(start, end) for start, end in periods]
+    train_dataset = MultiTaskDataset(train_df, label=[ColumnsConfig.HAS_RISK_LABEL] + days_label_list)
+    val_dataset = MultiTaskDataset(val_df, label=[ColumnsConfig.HAS_RISK_LABEL] + days_label_list)
 
-    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, sampler=sample_probability(train_y),shuffle=False, num_workers=0) # Windows下 num_workers>0 可能有问题
+    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, sampler=sample_probability(train_y[ColumnsConfig.HAS_RISK_LABEL]),shuffle=False, num_workers=0) # Windows下 num_workers>0 可能有问题
     val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=0)
     logger.info("数据加载器准备完毕.")
 
@@ -416,7 +434,7 @@ if __name__ == "__main__":
         'month': 12,
         'is_single': 2,
     }
-    model = Has_Risk_NFM(params).to(config.DEVICE) # 等待模型实现
+    model = Multi_Task_NFM(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 

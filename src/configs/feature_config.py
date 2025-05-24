@@ -28,7 +28,8 @@ class DataPathConfig:
     INTRO_DATA_SAVE_PATH = INTERIM_DATA_DIR / "intro_data.csv"
 
     FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "feature_data.csv"
-    TRANSFORMED_FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "transformed_feature_data.csv"
+    TRAIN_TRANSFORMED_FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "train_transformed_feature_data.csv"
+    VAL_TRANSFORMED_FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "val_transformed_feature_data.csv"
 
     DATA_TRANSFORMED_MASK_NULL_TRAIN_PATH = INTERIM_DATA_DIR / "transformed_feature_data_mask_null_train.csv"
     DATA_TRANSFORMED_MASK_NULL_VAL_PATH = INTERIM_DATA_DIR / "transformed_feature_data_mask_null_val.csv"
@@ -50,7 +51,7 @@ class ColumnsConfig:
     # TRANSFORM_FIT
     DISCRETE_COLUMNS = ['pigfarm_dk']
     CONTINUOUS_COLUMNS = ['intro_num']
-    INVARIANT_COLUMNS = ['stats_dt', 'is_single', 'month', 'month_sin', 'month_cos']
+    INVARIANT_COLUMNS = ['is_single', 'month', 'month_sin', 'month_cos']
 
     # MODEL_FIT
     MODEL_DISCRETE_COLUMNS = ['pigfarm_dk', 'is_single', 'month']
@@ -64,5 +65,6 @@ class ColumnsConfig:
     HAS_RISK_LABEL = 'has_risk_label'
 
     HAS_RISK_4_CLASS_PRE = 'abortion_{}_{}'
+    DAYS_RISK_8_CLASS_PRE = 'days_{}_{}'
 
     HAS_RISK_3_POINT_LABEL = ["future_7_label", "future_14_label", "future_21_label"]
