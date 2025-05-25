@@ -28,6 +28,7 @@ class FeatureGenerator:
         # 计算流产率
         ml_data.calculate_abortion_rate()
         ml_data.clean_data()
+        ml_data.clean_ml_data()
     
         return ml_data.index_data
     

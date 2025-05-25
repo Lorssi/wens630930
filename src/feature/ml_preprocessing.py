@@ -112,13 +112,9 @@ class MLDataPreprocessor:
 
         # 应用计算函数
         self.ml_data[new_column_name] = self.ml_data.apply(calculate_rate, axis=1)
-        self.ml_data.to_csv(DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
-        logger.info(f"ML流产率计算完成，数据已保存至 {DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH}")
 
         self.index_data = pd.merge(self.index_data, self.ml_data[[self.date_column, self.id_column, new_column_name]],
                                    on=[self.date_column, self.id_column], how='left')
-        self.index_data.to_csv(DataPathConfig.INDEX_ABORTION_RATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
-        logger.info(f"INDEX流产率数据已保存至 {DataPathConfig.INDEX_ABORTION_RATE_DATA_SAVE_PATH}")
         
         # 可以选择删除中间列
         # self.ml_data.drop(columns=['recent_7day_abort_sum'], inplace=True)
@@ -160,3 +156,45 @@ class MLDataPreprocessor:
         
         logger.info(f"数据清理完成：删除了{removed_farms}个流产率全为空的猪场，共{removed_records}条记录")
         logger.info(f"清理后数据：{after_count}条记录，{after_farm_count}个猪场")
+
+        self.index_data.to_csv(DataPathConfig.INDEX_ABORTION_RATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
+        logger.info(f"INDEX流产率数据已保存至 {DataPathConfig.INDEX_ABORTION_RATE_DATA_SAVE_PATH}")
+
+    def clean_ml_data(self):
+        """
+        删除流产率全为空的猪场数据
+        如果某个猪场的所有记录中abortion_rate均为NaN，则删除该猪场的所有记录
+        """
+        logger.info("开始将流产率全空的猪场删除...")
+        
+        if self.ml_data is None or 'abortion_rate' not in self.ml_data.columns:
+            logger.error("无法清理数据：index_data为空或没有abortion_rate列")
+            return
+        
+        # 记录清理前的数据状态
+        before_count = len(self.ml_data)
+        before_farm_count = self.ml_data[self.id_column].nunique()
+        
+        # 识别流产率全为空的猪场
+        # 对每个猪场，检查其abortion_rate是否全为NaN
+        farm_abortion_status = self.ml_data.groupby(self.id_column)['abortion_rate'].apply(
+            lambda x: not x.isna().all()  # 返回True表示至少有一个非空值
+        )
+        
+        # 获取要保留的猪场ID列表（至少有一个非空流产率）
+        farms_to_keep = farm_abortion_status[farm_abortion_status].index.tolist()
+        
+        # 只保留这些猪场的数据
+        self.ml_data = self.ml_data[self.ml_data[self.id_column].isin(farms_to_keep)]
+        
+        # 计算清理结果
+        after_count = len(self.ml_data)
+        after_farm_count = self.ml_data[self.id_column].nunique()
+        removed_records = before_count - after_count
+        removed_farms = before_farm_count - after_farm_count
+        
+        logger.info(f"数据清理完成：删除了{removed_farms}个流产率全为空的猪场，共{removed_records}条记录")
+        logger.info(f"清理后数据：{after_count}条记录，{after_farm_count}个猪场")
+
+        self.ml_data.to_csv(DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
+        logger.info(f"ML流产率计算完成，数据已保存至 {DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH}")

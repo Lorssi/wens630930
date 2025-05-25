@@ -8,7 +8,7 @@ MODELS_DIR = ROOT_DIR / "models"
 
 # --- 日期 ---
 TRAIN_RUNNING_DT = "2024-10-01" # 运行日期 (用于数据切分)
-TRAIN_INTERVAL = 100 # 训练数据的时间间隔 (单位：天)
+TRAIN_INTERVAL = 100# 训练数据的时间间隔 (单位：天)
 
 # --- 数据相关配置 ---
 VALIDATION_SPLIT_RATIO = 0.2 # 验证集占总猪场数据的比例 (按猪场ID划分时)
@@ -34,7 +34,7 @@ DROPOUT = 0.2 # LSTM dropout 概率
 OUTPUT_SIZE = 1 # 输出特征数量 (预测的目标变量数量)
 BIDIRECTIONAL = False # 是否使用双向 LSTM
 
-EMBEDDING_SIZE = 32 # 嵌入层大小 (如果使用嵌入层)
+EMBEDDING_SIZE = 64 # 嵌入层大小 (如果使用嵌入层)
 
 # --- 其他配置 ---
 MODEL_SAVE_PATH = MODELS_DIR / "model.pth" # 模型保存路径
