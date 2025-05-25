@@ -101,8 +101,8 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         increasing_samples = merged_df[increasing_risk_idx]
         total_samples = len(increasing_samples)
         
-        logger.info(f"\n----- {range_name}风险上升样本评估 -----")
-        logger.info(f"符合条件的样本数量: {total_samples}")
+        # logger.info(f"\n----- {range_name}风险上升样本评估 -----")
+        # logger.info(f"符合条件的样本数量: {total_samples}")
         
         # 计算预测正确的样本数量
         correct_t = (increasing_samples[pred_t] == increasing_samples[truth_t]).sum()
@@ -115,10 +115,10 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         # 计算模型预测为T和T+1都为1的样本数量
         both_pred_positive = ((increasing_samples[pred_t] == 1) & (increasing_samples[pred_t_plus_1] == 1)).sum()
         
-        logger.info(f"时期T预测正确的样本数: {correct_t} (占比: {correct_t/total_samples:.2%})")
-        logger.info(f"时期T+1预测正确的样本数: {correct_t_plus_1} (占比: {correct_t_plus_1/total_samples:.2%})")
-        logger.info(f"两个时期都预测正确的样本数: {both_correct} (占比: {both_correct/total_samples:.2%})")
-        logger.info(f"模型预测T和T+1都为1的样本数: {both_pred_positive} (占比: {both_pred_positive/total_samples:.2%})")
+        # logger.info(f"时期T预测正确的样本数: {correct_t} (占比: {correct_t/total_samples:.2%})")
+        # logger.info(f"时期T+1预测正确的样本数: {correct_t_plus_1} (占比: {correct_t_plus_1/total_samples:.2%})")
+        # logger.info(f"两个时期都预测正确的样本数: {both_correct} (占比: {both_correct/total_samples:.2%})")
+        # logger.info(f"模型预测T和T+1都为1的样本数: {both_pred_positive} (占比: {both_pred_positive/total_samples:.2%})")
         
         # 保存结果
         increasing_results = {}
@@ -159,8 +159,8 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         decreasing_samples = merged_df[decreasing_risk_idx]
         total_samples = len(decreasing_samples)
 
-        logger.info(f"\n----- {range_name}风险下降样本评估 -----")
-        logger.info(f"符合条件的样本数量: {total_samples}")
+        # logger.info(f"\n----- {range_name}风险下降样本评估 -----")
+        # logger.info(f"符合条件的样本数量: {total_samples}")
         
         # 计算预测正确的样本数量
         correct_t = (decreasing_samples[pred_t] == decreasing_samples[truth_t]).sum()
@@ -173,10 +173,10 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         # 计算模型预测为T和T+1都为0的样本数量
         both_pred_negative = ((decreasing_samples[pred_t] == 1) & (decreasing_samples[pred_t_plus_1] == 1)).sum()
         
-        logger.info(f"时期T预测正确的样本数: {correct_t} (占比: {correct_t/total_samples:.2%})")
-        logger.info(f"时期T+1预测正确的样本数: {correct_t_plus_1} (占比: {correct_t_plus_1/total_samples:.2%})")
-        logger.info(f"两个时期都预测正确的样本数: {both_correct} (占比: {both_correct/total_samples:.2%})")
-        logger.info(f"模型预测T和T+1都为1的样本数: {both_pred_negative} (占比: {both_pred_negative/total_samples:.2%})")
+        # logger.info(f"时期T预测正确的样本数: {correct_t} (占比: {correct_t/total_samples:.2%})")
+        # logger.info(f"时期T+1预测正确的样本数: {correct_t_plus_1} (占比: {correct_t_plus_1/total_samples:.2%})")
+        # logger.info(f"两个时期都预测正确的样本数: {both_correct} (占比: {both_correct/total_samples:.2%})")
+        # logger.info(f"模型预测T和T+1都为1的样本数: {both_pred_negative} (占比: {both_pred_negative/total_samples:.2%})")
         
         # 保存结果
         decreasing_results = {}
@@ -191,7 +191,7 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         return decreasing_results
         
 
-    def save_results_to_csv(self, results, output_path="data/eval_results/"):
+    def save_results_to_csv(self, results, pig_farm_range, output_path="data/eval_results/" ):
         # 创建输出目录（如果不存在）
         os.makedirs(output_path, exist_ok=True)
         
@@ -199,15 +199,7 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         metrics_1_7 = results.get("1-7 days", {})
         metrics_8_14 = results.get("8-14 days", {})
         metrics_15_21 = results.get("15-21 days", {})
-        
-        # 获取总样本数（从merged_df中获取）
-        sample_num = len(pd.merge(
-            self.index_ground_truth,
-            self.index_sample,
-            on=['stats_dt', 'pigfarm_dk'],
-            how='inner'
-        ))
-        
+                
         # 准备数据行
         rows = []
         
@@ -215,6 +207,9 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         metrics = ['precision', 'recall', 'f1_score', 'auc']
         
         for metric in metrics:
+            # 获取样本数量
+            sample_num = metrics_1_7.get("sample_num", 0)
+
             # 获取每个时间段的指标值
             val_1_7 = metrics_1_7.get(metric, float('nan'))
             val_8_14 = metrics_8_14.get(metric, float('nan'))
@@ -238,7 +233,7 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         df = pd.DataFrame(rows)
         
         # 设置文件名
-        filename = f"overall_metrics_{self.eval_running_dt_end}.csv"
+        filename = f"overall_metrics_{self.eval_running_dt_end}_{pig_farm_range}.csv"
         file_path = os.path.join(output_path, filename)
         
         # 保存CSV
@@ -247,7 +242,7 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         return file_path
 
 
-    def save_special_results_to_csv(self, results, output_path="data/eval_results/"):
+    def save_special_results_to_csv(self, results, pig_farm_range, output_path="data/eval_results/"):
         # 创建输出目录（如果不存在）
         os.makedirs(output_path, exist_ok=True)
         
@@ -264,7 +259,6 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         
         # 处理每种特殊情况
         for result_key, eval_name in eval_mapping.items():
-            print(results.keys())
             if result_key in results:
                 metrics = results[result_key]
                 total = metrics.get("count", 0)
@@ -297,7 +291,7 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
             df = pd.DataFrame(rows)
             
             # 设置文件名
-            filename = f"special_metrics_{self.eval_running_dt_end}.csv"
+            filename = f"special_metrics_{self.eval_running_dt_end}_{pig_farm_range}.csv"
             file_path = os.path.join(output_path, filename)
             
             # 保存CSV
@@ -309,7 +303,7 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
             return None
 
 
-    def eval_with_index_sample(self):
+    def eval_with_index_sample(self, pig_farm_range="整体"):
         # 根据stats_dt和pigfarm_dk将真实值和预测值进行合并
         merged_df = pd.merge(
             self.index_ground_truth,
@@ -318,7 +312,30 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
             how='inner'
         )
 
-        merged_df.to_csv('data/merged_df.csv', index=False)
+        # 根据猪场范围进行数据筛选
+        if pig_farm_range != "整体":
+            # 加载猪场部门映射数据
+            org_inv_map = pd.read_csv("data/raw_data/dim_org_inv.csv", encoding='utf-8')
+            
+            # 创建猪场编码到部门的映射
+            farm_to_dept = dict(zip(org_inv_map['org_inv_dk'], org_inv_map['l2_org_inv_nm']))
+            
+            # 为merged_df添加部门列
+            merged_df['department'] = merged_df['pigfarm_dk'].map(farm_to_dept)
+            
+            # 根据部门进行筛选
+            if pig_farm_range == "猪业一部":
+                merged_df = merged_df[merged_df['department'] == "猪业一部"]
+                logger.info(f"筛选猪业一部数据，保留{len(merged_df)}行")
+            elif pig_farm_range == "猪业二部":
+                merged_df = merged_df[merged_df['department'] == "猪业二部"]
+                logger.info(f"筛选猪业二部数据，保留{len(merged_df)}行")
+            elif pig_farm_range == "猪业三部":
+                merged_df = merged_df[merged_df['department'] == "猪业三部"]
+                logger.info(f"筛选猪业三部数据，保留{len(merged_df)}行")
+
+        # 用于调试
+        # merged_df.to_csv('data/merged_df.csv', index=False)
 
         if merged_df.empty:
             logger.warning("合并后的数据集为空，请检查数据源和合并条件。")
@@ -362,18 +379,19 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
             
             # 保存结果
             results[period_name] = {
+                "sample_num": len(true_labels),
                 "precision": precision,
                 "recall": recall,
                 "f1_score": f1,
                 "auc": auc
             }
 
-            logger.info(f"\n整体样本 - {period_name}:")
-            logger.info(f"样本数量: {len(true_labels)}")
-            logger.info(f"精确率: {precision:.4f}")
-            logger.info(f"召回率: {recall:.4f}")
-            logger.info(f"F1 Score: {f1:.4f}")
-            logger.info(f"AUC: {auc:.4f}")        
+            # logger.info(f"\n整体样本 - {period_name}:")
+            # logger.info(f"样本数量: {len(true_labels)}")
+            # logger.info(f"精确率: {precision:.4f}")
+            # logger.info(f"召回率: {recall:.4f}")
+            # logger.info(f"F1 Score: {f1:.4f}")
+            # logger.info(f"AUC: {auc:.4f}")        
         
         # 计算风险变化样本的指标 (低到高)
         increasing_risk_results = self.eval_increasing_risk_samples(merged_df, periods, is_1_2=True)
@@ -396,11 +414,11 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
             results.update(decreasing_risk_results)
         
         # 将结果保存为CSV文件
-        csv_path = self.save_results_to_csv(results)
+        csv_path = self.save_results_to_csv(results, pig_farm_range=pig_farm_range)
         logger.info(f"评测结果保存到 {csv_path}")
 
         # 将特殊样本结果保存为CSV文件
-        special_csv_path = self.save_special_results_to_csv(results)
+        special_csv_path = self.save_special_results_to_csv(results, pig_farm_range=pig_farm_range)
         if special_csv_path:
             logger.info(f"特殊样本评测结果保存到 {special_csv_path}")
 

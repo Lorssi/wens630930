@@ -7,7 +7,7 @@ import torch
 from feature.gen_feature import FeatureGenerator
 from main_train import main_train
 from main_predict import main_predict
-from abortion_abnormal.eval.main import AbortionAbnormalAllOnsetEval
+from abortion_abnormal.eval.main import AbortionAbnormalAllOnsetEval, AbortionAbnormalFirstOnsetEval, AbortionAbnormalSecondOnsetEval, AbortionAbnormalThirdOnsetEval
 
 
 
@@ -74,6 +74,9 @@ class AbortionAbnormalEvaluator:
             abortion_abnormal_eval = AbortionAbnormalAllOnsetEval(logger=logger)
             abortion_abnormal_eval.build_eval_set(eval_running_dt_end=predict_running_dt_end, eval_interval=predict_interval)
             abortion_abnormal_eval.eval_with_index_sample()
+            abortion_abnormal_eval.eval_with_index_sample(pig_farm_range="猪业一部")
+            abortion_abnormal_eval.eval_with_index_sample(pig_farm_range="猪业二部")
+            abortion_abnormal_eval.eval_with_index_sample(pig_farm_range="猪业三部")
             logger.info( '----------------------------------------测试流程运行结束----------------------------------------')
             return "success"
 
@@ -101,10 +104,8 @@ if __name__ == "__main__":
     #     'train_interval': 100
     # }
 
-    # Initialize the evaluator
+    # 初始化评测类
     evaluator = AbortionAbnormalEvaluator(task_param=task_param)
 
-    # Run the evaluation process
+    # 执行评测
     evaluator.eval_and_post_process()
-
-    
