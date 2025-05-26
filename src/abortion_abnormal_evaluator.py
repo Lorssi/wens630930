@@ -2,11 +2,10 @@ import os
 import sys
 import logging
 import torch
+import argparse
 
 # todo 之后工程化
 from feature.gen_feature import FeatureGenerator
-from main_train import main_train
-from main_predict import main_predict
 from abortion_abnormal.eval.main import AbortionAbnormalAllOnsetEval, AbortionAbnormalFirstOnsetEval, AbortionAbnormalSecondOnsetEval, AbortionAbnormalThirdOnsetEval
 
 
@@ -86,16 +85,28 @@ class AbortionAbnormalEvaluator:
             return e
 
 if __name__ == "__main__":
-    predict_running_dt_end_list = ["2023-06-13", "2023-07-29", "2023-09-13", "2023-10-29", "2023-12-14", "2024-01-29", "2024-03-15", "2024-04-24"]
-    train_running_dt_end_list = ["2023-5-15", "2023-6-30", "2023-8-15", "2023-9-30", "2023-11-15", "2023-12-31", "2024-2-15", "2024-3-26"]
+    predict_running_dt_end_list = ["2024-06-13", "2024-07-29", "2024-09-13", "2024-10-29", "2024-12-14", "2025-01-29", "2025-03-15", "2025-04-24"]
+    train_running_dt_end_list = ["2024-05-13", "2024-06-29", "2024-08-13", "2024-09-29", "2024-11-14", "2024-12-29", "2025-02-13", "2025-03-24"]
 
-    # Create task parameters dictionary
+    parser = argparse.ArgumentParser(description='This is a simple command line tool.')
+    parser.add_argument('--predict_running_dt_end', default="2024-06-13", type=str, help='Input eval running dt end')
+    parser.add_argument('--predict_interval', default=21, type=int, help='predict_interval')
+    parser.add_argument('--train_running_dt_end', default="2024-05-15", type=str, help='Input train running dt end')
+    args = parser.parse_args()
+
     task_param = {
-        'predict_running_dt_end': '2023-06-13',
-        'predict_interval': 28,
-        'train_running_dt_end': '2023-05-15',
-        'train_interval': 100
+        'predict_running_dt_end': args.predict_running_dt_end,
+        'predict_interval': args.predict_interval,
+        'train_running_dt_end': args.train_running_dt_end,
     }
+
+    # 统一 todo 将default改为流产率预测类
+    # task_param = {
+    #     'predict_running_dt_end': '2024-06-13',
+    #     'predict_interval': 21,
+    #     'train_running_dt_end': '2024-05-15',
+    #     # 'train_interval': 100
+    # }
 
     # task_param = {
     #     'predict_running_dt_end': '2025-03-01',
