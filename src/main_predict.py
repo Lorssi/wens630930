@@ -250,3 +250,101 @@ if __name__ == "__main__":
     # 保存预测结果
     save_to_csv(df=predict_df, filepath=config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH)
     logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")
+
+
+def main_predict(predict_running_dt, predict_interval):
+    logger.info("开始数据加载和预处理...")
+    # 1. 加载和基础预处理数据
+    # 生成特征
+    feature_generator = FeatureGenerator(running_dt=predict_running_dt, interval_days=predict_interval)
+    feature_df = feature_generator.generate_features()
+
+     # 生成lable
+    label_generator = LabelGenerator(
+        feature_data=feature_df,
+        running_dt=predict_running_dt,
+        interval_days=predict_interval,
+    )
+    logger.info("开始生成标签...")
+    X, y = label_generator.has_risk_4_class_generate_label()
+    predict_index_label = pd.concat([X, y], axis=1)
+    logger.info(f"预测数据的索引为：{predict_index_label.columns}")
+
+    # transform
+    if X is None:
+        logger.error("特征数据加载失败，程序退出。")
+        exit()
+    transformer = FeatureTransformer(
+        discrete_cols=ColumnsConfig.DISCRETE_COLUMNS,
+        continuous_cols=ColumnsConfig.CONTINUOUS_COLUMNS,
+        invariant_cols=ColumnsConfig.INVARIANT_COLUMNS,
+        model_discrete_cols=ColumnsConfig.MODEL_DISCRETE_COLUMNS,
+    )
+    transformer = transformer.load_params(config.TRANSFORMER_SAVE_PATH)
+    transform_dict = transformer.params
+
+    transformed_feature_df = transformer.transform(X.copy())
+    transformed_feature_df.to_csv(
+        DataPathConfig.TRANSFORMED_FEATURE_DATA_SAVE_PATH,
+        index=False,
+        encoding='utf-8-sig'
+    )
+    logger.info(f"trainsformed_feature_df数据字段为：{transformed_feature_df.columns}")
+    # 保存离散特征类别数用于embedding
+    # discrete_class_num = transformer.discrete_column_class_count(transformed_feature_df)
+    # logger.info(f"离散特征的类别数量: {discrete_class_num}")
+
+    # 预测数据
+    predict_X = transformed_feature_df.copy()
+    predict_y = y.copy()
+    predict_X = predict_X[ColumnsConfig.feature_columns]
+    predict_y = predict_y[ColumnsConfig.HAS_RISK_LABEL]
+
+    # 生成mask列
+    transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
+
+    transformed_masked_null_predict_X.fillna(0, inplace=True)  # 填充空值为0
+    logger.info(f"data_transformed_masked_null数据字段为：{transformed_masked_null_predict_X.columns}")
+    predict_df = pd.concat([transformed_masked_null_predict_X, predict_y], axis=1)
+    predict_df = predict_df.reset_index(drop=True)
+    logger.info(f"预测数据的索引为：{predict_df.columns}")
+    predict_df.to_csv(
+        DataPathConfig.PREDICT_DATA_TRANSFORMED_MASK_NULL_PREDICT_PATH,
+        index=False,
+        encoding='utf-8-sig'
+    )
+    predict_index_df = transformed_feature_df[['stats_dt', 'pigfarm_dk']].reset_index(drop=True)
+    # predict_index_df = predict_index_label[['stats_dt', 'pigfarm_dk', ColumnsConfig.HAS_RISK_LABEL]].reset_index(drop=True)
+
+    # train_X, train_y = create_sequences(train_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
+    # test_X, test_y = create_sequences(val_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
+    # logger.info(f"训练集X形状为：{train_X}")
+    # logger.info(f"训练集y形状为：{train_y}")
+    # logger.info("数据预处理完成.")
+
+    # 5. 创建 PyTorch Dataset 和 DataLoader
+    predict_dataset = HasRiskDataset(predict_df, label=ColumnsConfig.HAS_RISK_LABEL)
+
+    predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=0) # Windows下 num_workers>0 可能有问题
+    logger.info("数据加载器准备完毕.")
+
+    # --- 模型、损失函数、优化器 ---
+    params = {
+        'model_discrete_columns': ColumnsConfig.MODEL_DISCRETE_COLUMNS,
+        'model_continuous_columns': ColumnsConfig.MODEL_CONTINUOUS_COLUMNS,
+        'dropout': config.DROPOUT,
+
+        'pigfarm_dk': len(transform_dict['discrete_mappings']['pigfarm_dk']['key2id']),
+        'month': 12,
+        'is_single': 2,
+    }
+    model = Has_Risk_MLP(params).to(config.DEVICE) # 等待模型实现
+    logger.info("模型初始化完成.")
+    logger.info(f"模型结构:\n{model}")
+
+    # --- 开始训练 (当前被注释掉，因为模型未定义) ---
+    predict_df = predict_model(model, predict_loader, config.DEVICE, predict_index_label)
+
+    # 保存预测结果
+    save_to_csv(df=predict_df, filepath=config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH)
+    logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")
