@@ -35,6 +35,7 @@ OUTPUT_SIZE = 1 # 输出特征数量 (预测的目标变量数量)
 BIDIRECTIONAL = False # 是否使用双向 LSTM
 
 EMBEDDING_SIZE = 64 # 嵌入层大小 (如果使用嵌入层)
+NUM_WORKERS = 16
 
 # --- 其他配置 ---
 MODEL_SAVE_PATH = MODELS_DIR / "model.pth" # 模型保存路径

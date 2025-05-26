@@ -417,8 +417,8 @@ if __name__ == "__main__":
     train_dataset = MultiTaskDataset(train_df, label=[ColumnsConfig.HAS_RISK_LABEL] + days_label_list)
     val_dataset = MultiTaskDataset(val_df, label=[ColumnsConfig.HAS_RISK_LABEL] + days_label_list)
 
-    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, sampler=sample_probability(train_y[ColumnsConfig.HAS_RISK_LABEL]),shuffle=False, num_workers=0) # Windows下 num_workers>0 可能有问题
-    val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=0)
+    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, sampler=sample_probability(train_y[ColumnsConfig.HAS_RISK_LABEL]),shuffle=False, num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
+    val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=config.NUM_WORKERS)
     logger.info("数据加载器准备完毕.")
 
     # --- 模型、损失函数、优化器 ---

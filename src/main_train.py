@@ -399,8 +399,8 @@ if __name__ == "__main__":
     train_dataset = HasRiskDataset(train_df, label=ColumnsConfig.HAS_RISK_LABEL)
     val_dataset = HasRiskDataset(val_df, label=ColumnsConfig.HAS_RISK_LABEL)
 
-    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, sampler=sample_probability(train_y),shuffle=False, num_workers=0) # Windows下 num_workers>0 可能有问题
-    val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=0)
+    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, sampler=sample_probability(train_y),shuffle=False, num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
+    val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=config.NUM_WORKERS)
     logger.info("数据加载器准备完毕.")
 
     # --- 模型、损失函数、优化器 ---
@@ -444,116 +444,3 @@ if __name__ == "__main__":
     # torch.save(trained_model.state_dict(), final_model_path)
     # logger.info(f"最终模型已保存至: {final_model_path}")
 
-
-def main_train(train_running_dt):
-    logger.info("开始数据加载和预处理...")
-    # 1. 加载和基础预处理数据
-    # 生成特征
-    feature_generator = FeatureGenerator(running_dt=train_running_dt, interval_days=config.TRAIN_INTERVAL)
-    feature_df = feature_generator.generate_features()
-
-    # 生成lable
-    label_generator = LabelGenerator(
-        feature_data=feature_df,
-        running_dt=train_running_dt,
-        interval_days=config.TRAIN_INTERVAL
-    )
-    logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_4_class_generate_label()
-    logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
-    
-    # transformer
-    if X is None:
-        logger.error("特征数据加载失败，程序退出。")
-        exit()
-    transformer = FeatureTransformer(
-        discrete_cols=ColumnsConfig.DISCRETE_COLUMNS,
-        continuous_cols=ColumnsConfig.CONTINUOUS_COLUMNS,
-        invariant_cols=ColumnsConfig.INVARIANT_COLUMNS,
-        model_discrete_cols=ColumnsConfig.MODEL_DISCRETE_COLUMNS,
-        offset=config.TRANSFORM_OFFSET,
-    )
-
-    transformed_feature_df = transformer.fit_transform(X.copy())
-    transformed_feature_df.to_csv(
-        DataPathConfig.TRANSFORMED_FEATURE_DATA_SAVE_PATH,
-        index=False,
-        encoding='utf-8-sig'
-    )
-    logger.info(f"trainsformed_feature_df数据字段为：{transformed_feature_df.columns}")
-    transform_dict = transformer.params
-    logger.info(f"pigfarmdk类别数为：{len(transform_dict['discrete_mappings']['pigfarm_dk']['key2id'])}")
-    # 保存离散特征类别数用于embedding
-    # discrete_class_num = transformer.discrete_column_class_count(transformed_feature_df)
-    # logger.info(f"离散特征的类别数量: {discrete_class_num}")
-    transformer.save_params(filepath=config.TRANSFORMER_SAVE_PATH)
-
-    train_X, val_X, train_y, val_y = split_data(transformed_feature_df, y)
-    logger.info(f"train_X数据字段为：{train_X.columns}")
-    logger.info(f"val_X数据字段为：{val_X.columns}")
-
-    # 生成mask列
-    transformed_masked_null_train_X = mask_feature_null(data=train_X, mode='train')
-    transformed_masked_null_val_X = mask_feature_null(data=val_X, mode='val')
-    transformed_masked_null_train_X.fillna(0, inplace=True)  # 填充空值为0
-    transformed_masked_null_val_X.fillna(0, inplace=True)  # 填充空值为0
-    logger.info(f"data_transformed_masked_null数据字段为：{transformed_masked_null_train_X.columns}")
-
-    train_df = pd.concat([transformed_masked_null_train_X, train_y], axis=1)
-    val_df = pd.concat([transformed_masked_null_val_X, val_y], axis=1)
-    train_df = train_df.reset_index(drop=True)
-    val_df = val_df.reset_index(drop=True)
-    logger.info(f"train_df数据字段为：{train_df.columns}")
-    logger.info(f"val_df数据字段为：{val_df.columns}")
-
-
-    # train_X, train_y = create_sequences(train_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
-    # test_X, test_y = create_sequences(val_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
-    # logger.info(f"训练集X形状为：{train_X}")
-    # logger.info(f"训练集y形状为：{train_y}")
-    # logger.info("数据预处理完成.")
-
-    # 5. 创建 PyTorch Dataset 和 DataLoader
-    train_dataset = HasRiskDataset(train_df, label=ColumnsConfig.HAS_RISK_LABEL)
-    val_dataset = HasRiskDataset(val_df, label=ColumnsConfig.HAS_RISK_LABEL)
-
-    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, sampler=sample_probability(train_y),shuffle=False, num_workers=0) # Windows下 num_workers>0 可能有问题
-    val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=0)
-    logger.info("数据加载器准备完毕.")
-
-    # --- 模型、损失函数、优化器 ---
-    params = {
-        'model_discrete_columns': ColumnsConfig.MODEL_DISCRETE_COLUMNS,
-        'model_continuous_columns': ColumnsConfig.MODEL_CONTINUOUS_COLUMNS,
-        'dropout': config.DROPOUT,
-
-        'pigfarm_dk': len(transform_dict['discrete_mappings']['pigfarm_dk']['key2id']),
-        'month': 12,
-        'is_single': 2,
-    }
-    model = Has_Risk_MLP(params).to(config.DEVICE) # 等待模型实现
-    logger.info("模型初始化完成.")
-    logger.info(f"模型结构:\n{model}")
-
-    criterion = nn.CrossEntropyLoss()  # 假设是回归任务，使用均方误差
-    optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)  # L2正则化
-
-    # 初始化早停器
-    early_stopping = EarlyStopping(
-        patience=5,           # 连续5个epoch没有改善就停止
-        verbose=True,         # 打印早停信息
-        delta=0.001,          # 判定为改善的最小变化量
-        path=config.MODEL_SAVE_PATH,  # 最佳模型保存路径
-        trace_func=logger.info  # 使用logger记录信息
-    )
-
-    # --- 开始训练 (当前被注释掉，因为模型未定义) ---
-    trained_model = train_model(model, train_loader, val_loader, criterion, optimizer, config.NUM_EPOCHS, config.DEVICE, early_stopping=early_stopping)
-
-    # --- 模型评估 (可选，在测试集上) ---
-    # ...
-
-    # --- 保存最终模型 (如果未使用早停保存最佳模型) ---
-    # final_model_path = os.path.join(config.MODEL_SAVE_PATH, "final_lstm_model.pt")
-    # torch.save(trained_model.state_dict(), final_model_path)
-    # logger.info(f"最终模型已保存至: {final_model_path}")

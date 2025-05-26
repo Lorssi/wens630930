@@ -226,7 +226,7 @@ if __name__ == "__main__":
     # 5. 创建 PyTorch Dataset 和 DataLoader
     predict_dataset = MultiTaskDataset(predict_df, label=[ColumnsConfig.HAS_RISK_LABEL] + days_label_list)
 
-    predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=0) # Windows下 num_workers>0 可能有问题
+    predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
     logger.info("数据加载器准备完毕.")
 
     # --- 模型、损失函数、优化器 ---
