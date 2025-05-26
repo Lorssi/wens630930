@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 from configs.logger_config import logger_config
 from configs.feature_config import ColumnsConfig, DataPathConfig
 import config
-from dataset.dataset import HasRiskDataset
+from dataset.dataset import HasRiskDataset, MultiTaskDataset
 from utils.logger import setup_logger
 from utils.early_stopping import EarlyStopping
 from utils.save_csv import save_to_csv, read_csv
@@ -29,6 +29,7 @@ from feature.gen_label import LabelGenerator
 from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
 from model.nfm import Has_Risk_NFM
+from model.multi_task_nfm import Multi_Task_NFM
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 # 设置浮点数显示为小数点后2位，抑制科学计数法
 # np.set_printoptions(precision=2, suppress=True)
@@ -98,12 +99,12 @@ def predict_model(model, predict_loader, device, predict_index):
     
     # 不计算梯度，提高效率
     with torch.no_grad():
-        for inputs, _ in tqdm(predict_loader, desc="预测进度"):
+        for inputs, _, _, _, _ in tqdm(predict_loader, desc="预测进度"):
             # 将输入数据移动到指定设备
             inputs = inputs.to(device)
             
             # 前向传播，获取模型输出
-            outputs = model(inputs)
+            outputs, _, _ ,_ = model(inputs)
             
             # 应用softmax获取概率
             probs = torch.softmax(outputs, dim=1)
@@ -193,9 +194,12 @@ if __name__ == "__main__":
 
     # 预测数据
     predict_X = transformed_feature_df.copy()
-    predict_y = y.copy()
     predict_X = predict_X[ColumnsConfig.feature_columns]
-    predict_y = predict_y[ColumnsConfig.HAS_RISK_LABEL]
+
+    periods = [(1, 7), (8, 14), (15, 21)]
+    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(start, end) for start, end in periods]
+    predict_y = y.copy()
+    predict_y = predict_y[[ColumnsConfig.HAS_RISK_LABEL] + days_label_list]
 
     # 生成mask列
     transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
@@ -220,7 +224,7 @@ if __name__ == "__main__":
     # logger.info("数据预处理完成.")
 
     # 5. 创建 PyTorch Dataset 和 DataLoader
-    predict_dataset = HasRiskDataset(predict_df, label=ColumnsConfig.HAS_RISK_LABEL)
+    predict_dataset = MultiTaskDataset(predict_df, label=[ColumnsConfig.HAS_RISK_LABEL] + days_label_list)
 
     predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=0) # Windows下 num_workers>0 可能有问题
     logger.info("数据加载器准备完毕.")
@@ -240,7 +244,7 @@ if __name__ == "__main__":
         'month': 12,
         'is_single': 2,
     }
-    model = Has_Risk_NFM(params).to(config.DEVICE) # 等待模型实现
+    model = Multi_Task_NFM(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 

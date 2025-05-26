@@ -1,6 +1,7 @@
 from feature.ml_preprocessing import MLDataPreprocessor
 from feature.intro_preprocessing import IntroDataPreprocessor
 from feature.season_preprocessing import SeasonPreprocessor
+from feature.dim_org import OrgDataPreprocessor
 from configs.feature_config import DataPathConfig, ColumnsConfig
 from configs.logger_config import logger_config
 import pandas as pd
@@ -65,6 +66,22 @@ class FeatureGenerator:
         logger.info("季节特征计算完成")
         
         return season_feature
+    
+    def dim_org_feature(self, index_data=None):
+        """
+        计算组织数据特征
+        """
+        # 加载组织数据
+        org_data = OrgDataPreprocessor(DataPathConfig.DIM_ORG_INV_PATH)
+        if org_data.org_data is None:
+            logger.error("组织数据加载失败，无法计算组织数据特征")
+            return
+
+        # 合并组织数据
+        org_feature = org_data.get_dim_org_data(index_data)
+        logger.info("组织数据特征计算完成")
+        
+        return org_feature
 
     def generate_features(self):
         """
@@ -73,8 +90,10 @@ class FeatureGenerator:
         if self.abortion_data is None:
             logger.error("流产率数据未加载，无法生成特征")
             return
-        feature = self.intro_data_feature(self.abortion_data)
+        feature = self.abortion_data.copy()
+        # feature = self.intro_data_feature(self.feature)
         feature = self.season_feature(feature)
+        feature = self.dim_org_feature(feature)
 
         feature = feature[['stats_dt'] + ColumnsConfig.feature_columns]
         feature.to_csv(DataPathConfig.FEATURE_DATA_SAVE_PATH, index=False, encoding='utf-8')

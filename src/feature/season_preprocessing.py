@@ -18,9 +18,6 @@ class SeasonPreprocessor:
         
         # 提取月份
         self.index_data['month'] = self.index_data['stats_dt'].dt.month
-
-        self.index_data['month_sin'] = np.sin(2 * np.pi * self.index_data['month'] / 12)
-        self.index_data['month_cos'] = np.cos(2 * np.pi * self.index_data['month'] / 12)
         
         return self.index_data
 

@@ -406,13 +406,14 @@ if __name__ == "__main__":
     # --- 模型、损失函数、优化器 ---
     feature_dict = transform.features.features
     Categorical_feature = ColumnsConfig.DISCRETE_COLUMNS # 离散值字段
-    logger.info(f"pigfarm_dk类别数：{feature_dict[Categorical_feature[0]].category_encode.size}")
     params = {
         'model_discrete_columns': ColumnsConfig.MODEL_DISCRETE_COLUMNS,
         'model_continuous_columns': ColumnsConfig.MODEL_CONTINUOUS_COLUMNS,
         'dropout': config.DROPOUT,
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
+        'province': feature_dict[Categorical_feature[1]].category_encode.size,
+        'city': feature_dict[Categorical_feature[2]].category_encode.size,
         'month': 12,
         'is_single': 2,
     }

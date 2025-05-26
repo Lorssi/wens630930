@@ -323,7 +323,7 @@ if __name__ == "__main__":
         interval_days=config.TRAIN_INTERVAL
     )
     logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_4_class_period_generate_label()
+    X, y = label_generator.has_risk_4_class_period_generate_label_alter()
     logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
     logger.info(f"X,y特征数据形状为：{X.shape}， 标签数据形状为：{y.shape}")
     
@@ -424,13 +424,14 @@ if __name__ == "__main__":
     # --- 模型、损失函数、优化器 ---
     feature_dict = transform.features.features
     Categorical_feature = ColumnsConfig.DISCRETE_COLUMNS # 离散值字段
-    logger.info(f"pigfarm_dk类别数：{feature_dict[Categorical_feature[0]].category_encode.size}")
     params = {
         'model_discrete_columns': ColumnsConfig.MODEL_DISCRETE_COLUMNS,
         'model_continuous_columns': ColumnsConfig.MODEL_CONTINUOUS_COLUMNS,
         'dropout': config.DROPOUT,
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
+        'province': feature_dict[Categorical_feature[1]].category_encode.size,
+        'city': feature_dict[Categorical_feature[2]].category_encode.size,
         'month': 12,
         'is_single': 2,
     }

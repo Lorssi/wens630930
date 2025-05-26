@@ -27,6 +27,8 @@ class DataPathConfig:
     W01_AST_BOAR_PATH = RAW_DATA_DIR / "W01_AST_BOAR.csv"
     INTRO_DATA_SAVE_PATH = INTERIM_DATA_DIR / "intro_data.csv"
 
+    DIM_ORG_INV_PATH = RAW_DATA_DIR / "dim_org_inv.csv"
+
     FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "feature_data.csv"
     TRAIN_TRANSFORMED_FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "train_transformed_feature_data.csv"
     VAL_TRANSFORMED_FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "val_transformed_feature_data.csv"
@@ -49,13 +51,13 @@ class DataPathConfig:
 class ColumnsConfig:
 
     # TRANSFORM_FIT
-    DISCRETE_COLUMNS = ['pigfarm_dk']
-    CONTINUOUS_COLUMNS = ['intro_num']
-    INVARIANT_COLUMNS = ['is_single', 'month', 'month_sin', 'month_cos']
+    DISCRETE_COLUMNS = ['pigfarm_dk', 'province', 'city']
+    CONTINUOUS_COLUMNS = []
+    INVARIANT_COLUMNS = ['month']
 
     # MODEL_FIT
-    MODEL_DISCRETE_COLUMNS = ['pigfarm_dk', 'is_single', 'month']
-    MODEL_CONTINUOUS_COLUMNS = ['intro_num', 'month_sin', 'month_cos']
+    MODEL_DISCRETE_COLUMNS = ['pigfarm_dk', 'province', 'city', 'month']
+    MODEL_CONTINUOUS_COLUMNS = []
     MODEL_DIRECT_COLUMNS = []
 
     # COLUMNS
