@@ -91,7 +91,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='This is a simple command line tool.')
     parser.add_argument('--predict_running_dt_end', default="2024-06-13", type=str, help='Input eval running dt end')
     parser.add_argument('--predict_interval', default=28, type=int, help='predict_interval')
-    parser.add_argument('--train_running_dt_end', default="2024-05-15", type=str, help='Input train running dt end')
+    parser.add_argument('--train_running_dt_end', default="2024-05-13", type=str, help='Input train running dt end')
     args = parser.parse_args()
 
     task_param = {

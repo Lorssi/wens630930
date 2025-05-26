@@ -195,49 +195,56 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
         # 创建输出目录（如果不存在）
         os.makedirs(output_path, exist_ok=True)
         
-        # 获取指标值
-        metrics_1_7 = results.get("1-7 days", {})
-        metrics_8_14 = results.get("8-14 days", {})
-        metrics_15_21 = results.get("15-21 days", {})
-                
-        # 准备数据行
-        rows = []
-        
-        # 评估指标列表
-        metrics = ['precision', 'recall', 'f1_score', 'auc']
-        
-        for metric in metrics:
-            # 获取样本数量
-            sample_num = metrics_1_7.get("sample_num", 0)
+        # 映射时间段到格式化名称
+        period_mapping = {
+            "1-7 days": "1_7",
+            "8-14 days": "8_14",
+            "15-21 days": "15_21"
+        }
 
-            # 获取每个时间段的指标值
-            val_1_7 = metrics_1_7.get(metric, float('nan'))
-            val_8_14 = metrics_8_14.get(metric, float('nan'))
-            val_15_21 = metrics_15_21.get(metric, float('nan'))
-            
-            # 计算平均值
-            val_1_21 = np.nanmean([val_1_7, val_8_14, val_15_21])
-            
-            # 添加行
-            rows.append({
-                'stats_dt': self.eval_running_dt_end,
-                'sample_num': sample_num,
-                'eval': metric,
-                '1_21': val_1_21,
-                '1_7': val_1_7,
-                '8_14': val_8_14, 
-                '15_21': val_15_21
-            })
+        # 准备DataFrame所需的数据
+        rows = []
+
+        # 提取每个时间段的指标
+        for period_name, format_name in period_mapping.items():
+            if period_name in results:
+                metrics = results[period_name]
+                rows.append({
+                    'stats_dt': self.eval_running_dt_end,
+                    'period': format_name,
+                    'sample_num': metrics.get('sample_num', 0),
+                    'precision': metrics.get('precision', 0),
+                    'recall': metrics.get('recall', 0),
+                    'f1': metrics.get('f1_score', 0),
+                    'auc': metrics.get('auc', 0)
+                })
         
         # 创建DataFrame
         df = pd.DataFrame(rows)
+
+        # 计算所有时间段（1_21）的平均指标
+        if not df.empty:
+            avg_metrics = {
+                'stats_dt': self.eval_running_dt_end,
+                'period': '1_21',
+                'sample_num': df['sample_num'].sum(),
+                'precision': df['precision'].mean(),
+                'recall': df['recall'].mean(),
+                'f1': df['f1'].mean(),
+                'auc': df['auc'].mean()
+            }
+
+            # 将平均值行添加到DataFrame
+            avg_df = pd.DataFrame([avg_metrics])
+            df = pd.concat([avg_df, df], ignore_index=True)
         
         # 设置文件名
         filename = f"overall_metrics_{self.eval_running_dt_end}_{pig_farm_range}.csv"
         file_path = os.path.join(output_path, filename)
         
-        # 保存CSV
+        # 保存DataFrame为CSV文件
         df.to_csv(file_path, index=False, encoding='utf-8')
+        logger.info(f"评估结果已保存到: {file_path}")
         
         return file_path
 
