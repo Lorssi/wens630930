@@ -227,7 +227,7 @@ class AbortionAbnormalAllOnsetEval(EvalBaseMixin):
             avg_metrics = {
                 'stats_dt': self.eval_running_dt_end,
                 'period': '1_21',
-                'sample_num': df['sample_num'].sum(),
+                'sample_num': df['sample_num'].mean(),
                 'precision': df['precision'].mean(),
                 'recall': df['recall'].mean(),
                 'f1': df['f1'].mean(),
