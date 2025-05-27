@@ -109,8 +109,6 @@ class FeatureGenerator:
         feature = self.season_feature(feature)
         feature = self.dim_org_feature(feature)
 
-        feature.to_csv("feature.csv", index=False, encoding='utf-8')
-
         # feature = self.surrounding_feature(feature)
         feature = self.intro_data_feature(feature)
 

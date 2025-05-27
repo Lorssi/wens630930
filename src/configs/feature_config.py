@@ -25,6 +25,7 @@ class DataPathConfig:
     ABORTION_CALCULATE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "abortion_calculate_data_label.csv"
 
     W01_AST_BOAR_PATH = RAW_DATA_DIR / "W01_AST_BOAR.csv"
+    TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2 = RAW_DATA_DIR / "TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2.csv"
     INTRO_DATA_SAVE_PATH = INTERIM_DATA_DIR / "intro_data.csv"
 
     DIM_ORG_INV_PATH = RAW_DATA_DIR / "dim_org_inv.csv"
@@ -52,12 +53,12 @@ class ColumnsConfig:
 
     # TRANSFORM_FIT
     DISCRETE_COLUMNS = ['pigfarm_dk', 'province', 'city']
-    CONTINUOUS_COLUMNS = ['l3_abortion_mean', 'l3_abortion_mean_7d', 'l3_abortion_mean_15d', 'l3_abortion_mean_30d']
+    CONTINUOUS_COLUMNS = []
     INVARIANT_COLUMNS = ['month']
 
     # MODEL_FIT
     MODEL_DISCRETE_COLUMNS = ['pigfarm_dk', 'province', 'city', 'month']
-    MODEL_CONTINUOUS_COLUMNS = ['l3_abortion_mean', 'l3_abortion_mean_7d', 'l3_abortion_mean_15d', 'l3_abortion_mean_30d']
+    MODEL_CONTINUOUS_COLUMNS = []
     MODEL_DIRECT_COLUMNS = []
 
     # COLUMNS
