@@ -2,11 +2,12 @@ import os
 import sys
 import logging
 import torch
-import argparse
 
 # todo 之后工程化
 from feature.gen_feature import FeatureGenerator
-from abortion_abnormal.eval.main import AbortionAbnormalAllOnsetEval, AbortionAbnormalFirstOnsetEval, AbortionAbnormalSecondOnsetEval, AbortionAbnormalThirdOnsetEval
+from main_train import main_train
+from main_predict import main_predict
+from eval.main import AbortionAbnormalAllOnsetEval
 
 
 
@@ -56,26 +57,24 @@ class AbortionAbnormalEvaluator:
            
             logger.info( '----------------------------------------测试特征预计算----------------------------------------')
             # todo 特征预计算模块
-            # feature_generator = FeatureGenerator(running_dt=predict_running_dt_end,
-            #                                      interval_days=train_interval)
-            # feature_df = feature_generator.generate_features()
+            feature_generator = FeatureGenerator(running_dt=predict_running_dt_end,
+                                                 interval_days=train_interval,
+                                                 logger=logger)
+            feature_df = feature_generator.generate_features()
 
             logger.info('----------------------------------------测试模型训练----------------------------------------')
             # todo 模型训练模块
-            # main_train(train_running_dt=train_running_dt_end)
+            main_train(train_running_dt=train_running_dt_end, train_interval=train_interval)
 
             logger.info('----------------------------------------测试数据预测----------------------------------------')
             # todo 数据预测
-            # main_predict(predict_running_dt=predict_running_dt_end, predict_interval=predict_interval)
+            main_predict(predict_running_dt=predict_running_dt_end, predict_interval=predict_interval)
 
             logger.info('----------------------------------------测试模型评估----------------------------------------')
             # todo 模型评估模块
             abortion_abnormal_eval = AbortionAbnormalAllOnsetEval(logger=logger)
             abortion_abnormal_eval.build_eval_set(eval_running_dt_end=predict_running_dt_end, eval_interval=predict_interval)
             abortion_abnormal_eval.eval_with_index_sample()
-            abortion_abnormal_eval.eval_with_index_sample(pig_farm_range="猪业一部")
-            abortion_abnormal_eval.eval_with_index_sample(pig_farm_range="猪业二部")
-            abortion_abnormal_eval.eval_with_index_sample(pig_farm_range="猪业三部")
             logger.info( '----------------------------------------测试流程运行结束----------------------------------------')
             return "success"
 
@@ -85,38 +84,18 @@ class AbortionAbnormalEvaluator:
             return e
 
 if __name__ == "__main__":
-    predict_running_dt_end_list = ["2024-06-13", "2024-07-29", "2024-09-13", "2024-10-29", "2024-12-14", "2025-01-29", "2025-03-15", "2025-04-24"]
-    train_running_dt_end_list = ["2024-05-13", "2024-06-29", "2024-08-13", "2024-09-29", "2024-11-14", "2024-12-29", "2025-02-13", "2025-03-24"]
-
-    parser = argparse.ArgumentParser(description='This is a simple command line tool.')
-    parser.add_argument('--predict_running_dt_end', default="2024-06-13", type=str, help='Input eval running dt end')
-    parser.add_argument('--predict_interval', default=28, type=int, help='predict_interval')
-    parser.add_argument('--train_running_dt_end', default="2024-05-15", type=str, help='Input train running dt end')
-    args = parser.parse_args()
-
+    # Create task parameters dictionary
     task_param = {
-        'predict_running_dt_end': args.predict_running_dt_end,
-        'predict_interval': args.predict_interval,
-        'train_running_dt_end': args.train_running_dt_end,
+        'predict_running_dt_end': '2023-06-13',
+        'predict_interval': 28,
+        'train_running_dt_end': '2023-05-15',
+        'train_interval': 100
     }
 
-    # 统一 todo 将default改为流产率预测类
-    # task_param = {
-    #     'predict_running_dt_end': '2024-06-13',
-    #     'predict_interval': 21,
-    #     'train_running_dt_end': '2024-05-15',
-    #     # 'train_interval': 100
-    # }
-
-    # task_param = {
-    #     'predict_running_dt_end': '2025-03-01',
-    #     'predict_interval': 90,
-    #     'train_running_dt_end': '2024-10-01',
-    #     'train_interval': 100
-    # }
-
-    # 初始化评测类
+    # Initialize the evaluator
     evaluator = AbortionAbnormalEvaluator(task_param=task_param)
 
-    # 执行评测
+    # Run the evaluation process
     evaluator.eval_and_post_process()
+
+    

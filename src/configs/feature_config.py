@@ -52,12 +52,12 @@ class ColumnsConfig:
 
     # TRANSFORM_FIT
     DISCRETE_COLUMNS = ['pigfarm_dk', 'province', 'city']
-    CONTINUOUS_COLUMNS = []
+    CONTINUOUS_COLUMNS = ['l3_abortion_mean', 'l3_abortion_mean_7d', 'l3_abortion_mean_15d', 'l3_abortion_mean_30d']
     INVARIANT_COLUMNS = ['month']
 
     # MODEL_FIT
     MODEL_DISCRETE_COLUMNS = ['pigfarm_dk', 'province', 'city', 'month']
-    MODEL_CONTINUOUS_COLUMNS = []
+    MODEL_CONTINUOUS_COLUMNS = ['l3_abortion_mean', 'l3_abortion_mean_7d', 'l3_abortion_mean_15d', 'l3_abortion_mean_30d']
     MODEL_DIRECT_COLUMNS = []
 
     # COLUMNS
