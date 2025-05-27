@@ -6,7 +6,7 @@ import argparse
 
 # todo 之后工程化
 from feature.gen_feature import FeatureGenerator
-from abortion_abnormal.eval.main import AbortionAbnormalAllOnsetEval, AbortionAbnormalFirstOnsetEval, AbortionAbnormalSecondOnsetEval, AbortionAbnormalThirdOnsetEval
+from abortion_abnormal.eval.main import AbortionAbnormalEval1
 
 
 
@@ -70,12 +70,9 @@ class AbortionAbnormalEvaluator:
 
             logger.info('----------------------------------------测试模型评估----------------------------------------')
             # todo 模型评估模块
-            abortion_abnormal_eval = AbortionAbnormalAllOnsetEval(logger=logger)
+            abortion_abnormal_eval = AbortionAbnormalEval1(logger=logger)
             abortion_abnormal_eval.build_eval_set(eval_running_dt_end=predict_running_dt_end, eval_interval=predict_interval)
             abortion_abnormal_eval.eval_with_index_sample()
-            abortion_abnormal_eval.eval_with_index_sample(pig_farm_range="猪业一部")
-            abortion_abnormal_eval.eval_with_index_sample(pig_farm_range="猪业二部")
-            abortion_abnormal_eval.eval_with_index_sample(pig_farm_range="猪业三部")
             logger.info( '----------------------------------------测试流程运行结束----------------------------------------')
             return "success"
 
