@@ -39,17 +39,18 @@ class FeatureGenerator:
         计算引种数据特征
         """
         # 加载数据
-        intro_data = IntroDataPreprocessor(DataPathConfig.W01_AST_BOAR_PATH, index_data=index_data, running_dt=self.running_dt, interval_days=self.interval_days)
+        intro_data = IntroDataPreprocessor(DataPathConfig.W01_AST_BOAR_PATH, 
+                                           DataPathConfig.TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2, 
+                                           index_data=index_data)
         if intro_data.intro_data is None:
             logger.error("数据加载失败，无法计算引种数据特征")
             return
 
         # 计算引种特征
-        intro_feature = intro_data.calculate_is_single_and_intro_num()
-        
-        # 保存数据
-        intro_feature.to_csv(DataPathConfig.INTRO_DATA_SAVE_PATH, index=False, encoding='utf-8')
-        logger.info(f"引种数据特征保存至 {DataPathConfig.INTRO_DATA_SAVE_PATH}")
+        intro_feature = intro_data.calculate_intro_feature()
+        if intro_feature is None:
+            logger.error("引种特征计算失败")
+
         return intro_feature
 
     def season_feature(self, index_data=None):
@@ -90,11 +91,12 @@ class FeatureGenerator:
         """
         # 加载周边信息数据
         surrounding_data = SurroundingPreprocessing(index_data=index_data)
-        surrounding_data.calculate_surrounding_information()
+        surrounding_data.calculate_surrounding_feature()
         if surrounding_data.index_data is None:
             logger.error("周边信息数据加载失败，无法计算周边信息特征")
             return
         return surrounding_data.index_data
+
 
     def generate_features(self):
         """
@@ -104,11 +106,13 @@ class FeatureGenerator:
             logger.error("流产率数据未加载，无法生成特征")
             return
         feature = self.abortion_data.copy()
-        # feature = self.intro_data_feature(self.feature)
         feature = self.season_feature(feature)
         feature = self.dim_org_feature(feature)
 
-        feature = self.surrounding_feature(feature)
+        feature.to_csv("feature.csv", index=False, encoding='utf-8')
+
+        # feature = self.surrounding_feature(feature)
+        feature = self.intro_data_feature(feature)
 
         feature = feature[['stats_dt'] + ColumnsConfig.feature_columns]
         feature.to_csv(DataPathConfig.FEATURE_DATA_SAVE_PATH, index=False, encoding='utf-8')
