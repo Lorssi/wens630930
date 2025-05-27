@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 from configs.logger_config import logger_config
 from configs.feature_config import ColumnsConfig, DataPathConfig
 import config
-from dataset.dataset import HasRiskDataset
+from dataset.dataset import HasRiskDataset, MultiTaskAndMultiLabelDataset
 from utils.logger import setup_logger
 from utils.early_stopping import EarlyStopping
 from utils.save_csv import save_to_csv, read_csv
@@ -28,7 +28,7 @@ from feature.gen_feature import FeatureGenerator
 from feature.gen_label import LabelGenerator
 from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
-from model.nfm import Has_Risk_NFM
+from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 # 设置浮点数显示为小数点后2位，抑制科学计数法
 # np.set_printoptions(precision=2, suppress=True)
@@ -41,6 +41,41 @@ if torch.cuda.is_available():
 
 # 初始化日志
 logger = setup_logger(logger_config.PREDICT_LOG_FILE_PATH, logger_name="TrainLogger")
+
+def _collate_fn(batch):
+    # 初始化列表
+    features_list = []
+    
+    # 多标签任务（前三个标签）
+    multi_label_list = []
+    
+    # 多任务分类（后三个标签）
+    days_label_1_7_list = []
+    days_label_8_14_list = []
+    days_label_15_21_list = []
+    
+    for feature, label in batch:
+        # 添加特征
+        features_list.append(feature)
+        
+        # 多标签任务（前三个）- 需要作为一个向量
+        multi_label = label[:3]  # 前三个标签
+        multi_label_list.append(multi_label)
+        
+        # 多任务分类（后三个）- 每个任务单独处理
+        days_label_1_7_list.append(label[3])  # 1-7天标签
+        days_label_8_14_list.append(label[4]) # 8-14天标签
+        days_label_15_21_list.append(label[5]) # 15-21天标签
+    
+    # 转换为张量
+    features_tensor = torch.tensor(features_list, dtype=torch.float32)
+    multi_label_tensor = torch.tensor(multi_label_list, dtype=torch.float32)  # 多标签用float
+    days_1_7_tensor = torch.tensor(days_label_1_7_list, dtype=torch.long)    # 分类标签用long
+    days_8_14_tensor = torch.tensor(days_label_8_14_list, dtype=torch.long)
+    days_15_21_tensor = torch.tensor(days_label_15_21_list, dtype=torch.long)
+    
+    # 返回特征和所有标签
+    return features_tensor, (multi_label_tensor, days_1_7_tensor, days_8_14_tensor, days_15_21_tensor)
 
     # 针对空值做处理
 def mask_feature_null(data = None, mode='train'):
@@ -79,7 +114,7 @@ def mask_feature_null(data = None, mode='train'):
 
 
 def predict_model(model, predict_loader, device, predict_index):
-    logger.info("开始预测...")
+    logger.info("开始多标签预测...")
     
     # 加载训练好的模型权重
     if os.path.exists(config.MODEL_SAVE_PATH):
@@ -105,11 +140,11 @@ def predict_model(model, predict_loader, device, predict_index):
             # 前向传播，获取模型输出
             outputs = model(inputs)
             
-            # 应用softmax获取概率
-            probs = torch.softmax(outputs, dim=1)
+            # 多标签任务使用sigmoid获取各标签概率
+            probs = torch.sigmoid(outputs)
             
-            # 获取预测类别
-            _, predicted = torch.max(outputs, 1)
+            # 使用阈值0.5获取二值化预测结果
+            predicted = (probs > 0.5).float()
             
             # 将张量转移到CPU并转换为NumPy数组
             probs_np = probs.cpu().numpy()
@@ -120,8 +155,8 @@ def predict_model(model, predict_loader, device, predict_index):
             all_probs.append(probs_np)
     
     # 合并所有批次的预测结果
-    predictions = np.concatenate(all_predictions)
-    probabilities = np.concatenate(all_probs)
+    predictions = np.vstack(all_predictions)
+    probabilities = np.vstack(all_probs)
 
     # 添加安全检查，确保长度一致
     if len(predictions) != len(predict_index):
@@ -130,15 +165,19 @@ def predict_model(model, predict_loader, device, predict_index):
     
     logger.info(f"预测完成，共预测 {len(predictions)} 个样本")
     
-    # 将预测结果添加到预测索引DataFrame中
-    predict_index['predicted_class'] = predictions
+    # 获取标签名称
+    periods = [(1, 7), (8, 14), (15, 21)]
+    label_names = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
     
-    # 添加四个类别的概率列
-    for i in range(4):
-        predict_index[f'prob_class_{i}'] = probabilities[:, i]
+    # 将预测结果添加到预测索引DataFrame中
+    for i, label_name in enumerate(label_names):
+        predict_index[f'predicted_{label_name}'] = predictions[:, i]
+        predict_index[f'probability_{label_name}'] = probabilities[:, i]
     
     # 输出预测统计信息
-    logger.info(f"预测类别分布:\n{predict_index['predicted_class'].value_counts()}")
+    for i, label in enumerate(label_names):
+        pos_count = np.sum(predictions[:, i])
+        logger.info(f"{label} 预测分布: 正例={pos_count}, 负例={len(predictions)-pos_count}")
     
     return predict_index
 
@@ -156,7 +195,7 @@ if __name__ == "__main__":
         interval_days=config.main_predict.PREDICT_INTERVAL,
     )
     logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_4_class_period_generate_label_alter()
+    X, y = label_generator.has_risk_period_generate_multi_label_alter()
     X.reset_index(drop=True, inplace=True)
     y.reset_index(drop=True, inplace=True)
     predict_index_label = pd.concat([X, y], axis=1)
@@ -192,10 +231,14 @@ if __name__ == "__main__":
     # logger.info(f"离散特征的类别数量: {discrete_class_num}")
 
     # 预测数据
+    periods = [(1, 7), (8, 14), (15, 21)]
+    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(left, right) for left, right in periods]
+    has_risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
+
     predict_X = transformed_feature_df.copy()
     predict_y = y.copy()
     predict_X = predict_X[ColumnsConfig.feature_columns]
-    predict_y = predict_y[ColumnsConfig.HAS_RISK_LABEL]
+    predict_y = predict_y[has_risk_label_list + days_label_list]  # 只保留需要的标签列
 
     # 生成mask列
     transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
@@ -220,9 +263,9 @@ if __name__ == "__main__":
     # logger.info("数据预处理完成.")
 
     # 5. 创建 PyTorch Dataset 和 DataLoader
-    predict_dataset = HasRiskDataset(predict_df, label=ColumnsConfig.HAS_RISK_LABEL)
+    predict_dataset = MultiTaskAndMultiLabelDataset(predict_df, label=has_risk_label_list + days_label_list)
 
-    predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
+    predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
     logger.info("数据加载器准备完毕.")
 
     # --- 模型、损失函数、优化器 ---
@@ -240,7 +283,7 @@ if __name__ == "__main__":
         'month': 12,
         'is_single': 2,
     }
-    model = Has_Risk_NFM(params).to(config.DEVICE) # 等待模型实现
+    model = Has_Risk_NFM_MultiLabel(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 
