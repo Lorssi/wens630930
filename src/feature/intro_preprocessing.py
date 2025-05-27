@@ -140,6 +140,7 @@ class IntroDataPreprocessor:
         # 将特征转换为DataFrame并与结果合并
         if new_features:
             features_df = pd.DataFrame(new_features)
+            features_df['stats_dt'] = features_df['stats_dt'] + pd.Timedelta(days=1)  # 确保日期是T+1，用于模拟当天没有数据的情况
             result = pd.merge(result, features_df, on=['pigfarm_dk', 'stats_dt'], how='left')
         
         # 填充缺失的特征值为0

@@ -97,6 +97,12 @@ class FeatureGenerator:
             return
         return surrounding_data.index_data
 
+    def production_feature(self, index_data=None):
+        """
+        计算生产数据特征
+        """
+        pass
+
 
     def generate_features(self):
         """
@@ -110,7 +116,7 @@ class FeatureGenerator:
         feature = self.dim_org_feature(feature)
 
         # feature = self.surrounding_feature(feature)
-        feature = self.intro_data_feature(feature)
+        # feature = self.intro_data_feature(feature)
 
         feature = feature[['stats_dt'] + ColumnsConfig.feature_columns]
         feature.to_csv(DataPathConfig.FEATURE_DATA_SAVE_PATH, index=False, encoding='utf-8')
