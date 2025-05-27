@@ -69,3 +69,29 @@ class MultiTaskDataset(Dataset):
         days_15_21_tensor = torch.tensor(days_15_21, dtype=torch.long)
             
         return feature_tensor, has_risk_label_tensor, days_1_7_tensor, days_8_14_tensor, days_15_21_tensor
+    
+class MultiTaskAndMultiLabelDataset(Dataset):
+    """
+    多任务数据集类，用于多任务学习模型训练
+        
+    Args:
+        features (numpy.ndarray): 特征序列数据，形状为 (样本数, 序列长度, 特征数)
+        labels (numpy.ndarray): 标签数据，形状为 (样本数,)
+        transform (callable, optional): 可选的数据转换函数
+    """
+    def __init__(self, df: pd.DataFrame, label: list):
+        self.df = df
+        self.label = label
+
+            
+    def __len__(self):
+        """返回数据集大小"""
+        return len(self.df)
+        
+    def __getitem__(self, idx):
+        """获取单个样本"""
+        row = self.df.iloc[idx]
+        feature = row.drop(self.label).values
+        label = row[self.label].values
+                          
+        return feature, label

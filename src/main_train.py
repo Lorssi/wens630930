@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 from configs.logger_config import logger_config
 from configs.feature_config import ColumnsConfig, DataPathConfig
 import config
-from dataset.dataset import HasRiskDataset
+from dataset.dataset import HasRiskDataset, MultiTaskAndMultiLabelDataset
 from utils.logger import setup_logger
 from utils.early_stopping import EarlyStopping
 from utils.save_csv import save_to_csv, read_csv
@@ -28,7 +28,7 @@ from feature.gen_feature import FeatureGenerator
 from feature.gen_label import LabelGenerator
 from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
-from model.nfm import Has_Risk_NFM
+from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel
 from model.multi_task_nfm import Multi_Task_NFM
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 
@@ -43,6 +43,41 @@ if torch.cuda.is_available():
 
 # 初始化日志
 logger = setup_logger(logger_config.TRAIN_LOG_FILE_PATH, logger_name="TrainLogger")
+
+def _collate_fn(batch):
+    # 初始化列表
+    features_list = []
+    
+    # 多标签任务（前三个标签）
+    multi_label_list = []
+    
+    # 多任务分类（后三个标签）
+    days_label_1_7_list = []
+    days_label_8_14_list = []
+    days_label_15_21_list = []
+    
+    for feature, label in batch:
+        # 添加特征
+        features_list.append(feature)
+        
+        # 多标签任务（前三个）- 需要作为一个向量
+        multi_label = label[:3]  # 前三个标签
+        multi_label_list.append(multi_label)
+        
+        # 多任务分类（后三个）- 每个任务单独处理
+        days_label_1_7_list.append(label[3])  # 1-7天标签
+        days_label_8_14_list.append(label[4]) # 8-14天标签
+        days_label_15_21_list.append(label[5]) # 15-21天标签
+    
+    # 转换为张量
+    features_tensor = torch.tensor(features_list, dtype=torch.float32)
+    multi_label_tensor = torch.tensor(multi_label_list, dtype=torch.float32)  # 多标签用float
+    days_1_7_tensor = torch.tensor(days_label_1_7_list, dtype=torch.long)    # 分类标签用long
+    days_8_14_tensor = torch.tensor(days_label_8_14_list, dtype=torch.long)
+    days_15_21_tensor = torch.tensor(days_label_15_21_list, dtype=torch.long)
+    
+    # 返回特征和所有标签
+    return features_tensor, (multi_label_tensor, days_1_7_tensor, days_8_14_tensor, days_15_21_tensor)
 
     # 针对空值做处理
 def mask_feature_null(data = None, mode='train'):
@@ -88,6 +123,9 @@ def split_data(data_transformed_masked_null, y):
     Returns:
         tuple: (训练集数据, 验证集数据)
     """
+    periods = [(1, 7), (8, 14), (15, 21)]
+    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(left, right) for left, right in periods]
+    has_risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
     # 确保日期列是datetime类型
     data_transformed_masked_null = data_transformed_masked_null.copy()
     y = y.copy()
@@ -96,8 +134,8 @@ def split_data(data_transformed_masked_null, y):
 
     train_X = train_X[ColumnsConfig.feature_columns]
     test_X = test_X[ColumnsConfig.feature_columns]
-    train_y = train_y[[ColumnsConfig.HAS_RISK_LABEL]]
-    test_y = test_y[[ColumnsConfig.HAS_RISK_LABEL]]
+    train_y = train_y[has_risk_label_list + days_label_list]
+    test_y = test_y[has_risk_label_list + days_label_list]
 
     return train_X, test_X, train_y, test_y
 
@@ -140,33 +178,6 @@ def sample_probability(labels):
     
     return sampler
 
-# 平衡采样但不过度重采样
-def balanced_sampler(labels, max_ratio=3.0):
-    """
-    创建受限的平衡采样器，避免过度重采样
-    """
-    unique_classes, class_counts = np.unique(labels, return_counts=True)
-    max_count = np.max(class_counts)
-    min_count = np.min(class_counts)
-    
-    # 限制重采样倍率
-    if max_count / min_count > max_ratio:
-        target_counts = {cls: min(max_ratio * min_count, count) for cls, count in zip(unique_classes, class_counts)}
-    else:
-        target_counts = {cls: count for cls, count in zip(unique_classes, class_counts)}
-    
-    # 计算样本权重
-    weights = np.zeros_like(labels, dtype=float)
-    for cls in unique_classes:
-        idx = (labels == cls)
-        weights[idx] = target_counts[cls] / np.sum(idx)
-    
-    return WeightedRandomSampler(
-        weights=torch.from_numpy(weights).double(),
-        num_samples=len(weights),
-        replacement=True
-    )
-
 def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, device, early_stopping=None):
     logger.info("开始训练...")
     # scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=1)
@@ -177,11 +188,14 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         model.train()
         train_loss = 0.0
         for batch_idx, (features, targets) in enumerate(train_loader):
-            features, targets = features.to(device), targets.to(device)
+            features = features.to(device)
+            multi_label_tensor, _, _, _ = targets
+            # label
+            multi_label_tensor = multi_label_tensor.to(device)
 
             optimizer.zero_grad()
             outputs = model(features)
-            loss = criterion(outputs, targets)
+            loss = criterion(outputs, multi_label_tensor)
             loss.backward()
 
             # 添加梯度裁剪，设置最大范数为1.0
@@ -230,7 +244,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
 
 def eval(model, val_loader, criterion, device):
     """
-    评估模型在验证集上的性能（多分类版本）
+    评估模型在验证集上的性能（多标签版本）
     """
     model.eval()
     val_loss = 0.0
@@ -239,45 +253,50 @@ def eval(model, val_loader, criterion, device):
     all_probs = []
     
     with torch.no_grad():
-        for sequences, targets in val_loader:
-            sequences, targets = sequences.to(device), targets.to(device)
+        for features, targets in val_loader:
+            # 获取批次数据并移至目标设备
+            features = features.to(device)
+            multi_label_tensor, _, _, _ = targets  # 只取多标签部分
+            multi_label_tensor = multi_label_tensor.to(device)
             
             # 前向传播
-            outputs = model(sequences)
-            loss = criterion(outputs, targets)
+            outputs = model(features)
+            loss = criterion(outputs, multi_label_tensor)
             val_loss += loss.item()
             
-            # 获取预测结果
-            probs = torch.softmax(outputs, dim=1)  # 所有类别的概率
-            preds = torch.argmax(outputs, dim=1)
+            # 获取预测结果 - 使用sigmoid而非softmax
+            probs = torch.sigmoid(outputs)
+            preds = (probs > 0.5).float()  # 二值化，阈值为0.5
             
             # 收集结果
-            all_preds.extend(preds.cpu().numpy())
-            all_targets.extend(targets.cpu().numpy())
-            all_probs.extend(probs.cpu().numpy())
+            all_preds.append(preds.cpu().numpy())
+            all_targets.append(multi_label_tensor.cpu().numpy())
+            all_probs.append(probs.cpu().numpy())
     
     # 计算平均损失
     avg_val_loss = val_loss / len(val_loader)
     
     # 转换为numpy数组
-    all_preds = np.array(all_preds)
-    all_targets = np.array(all_targets)
-    all_probs = np.array(all_probs)
+    all_preds = np.vstack(all_preds)
+    all_targets = np.vstack(all_targets)
+    all_probs = np.vstack(all_probs)
     
-    # 计算多分类指标
+    # 计算多标签指标
     accuracy = accuracy_score(all_targets, all_preds)
     precision = precision_score(all_targets, all_preds, average='macro', zero_division=0)
     recall = recall_score(all_targets, all_preds, average='macro', zero_division=0)
     f1 = 2 * (precision * recall) / (precision + recall + 1e-10)
     
-    # 多分类 AUC (one-vs-rest)
+    # 多标签 AUC
     try:
-        auc = roc_auc_score(
-            y_true=all_targets, 
-            y_score=all_probs, 
-            multi_class='ovr',
-            average='macro'
-        )
+        # 对每个标签分别计算ROC AUC，然后取平均
+        auc_scores = []
+        for i in range(all_probs.shape[1]):
+            # 只有当某个标签既有正例又有负例时才计算AUC
+            if len(np.unique(all_targets[:, i])) > 1:
+                auc_scores.append(roc_auc_score(all_targets[:, i], all_probs[:, i]))
+        
+        auc = np.mean(auc_scores) if auc_scores else 0.0
     except ValueError:
         auc = 0.0
         logger.warning("无法计算AUC，可能是某些类别样本数太少")
@@ -307,7 +326,7 @@ if __name__ == "__main__":
         interval_days=config.TRAIN_INTERVAL
     )
     logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_4_class_period_generate_label_alter()
+    X, y = label_generator.has_risk_period_generate_multi_label_alter()
     logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
     logger.info(f"X,y特征数据形状为：{X.shape}， 标签数据形状为：{y.shape}")
     
@@ -387,6 +406,11 @@ if __name__ == "__main__":
     val_df = val_df.reset_index(drop=True)
     logger.info(f"train_df数据字段为：{train_df.columns}")
     logger.info(f"val_df数据字段为：{val_df.columns}")
+    train_df.to_csv(
+        "train_df.csv",
+        index=False,
+        encoding='utf-8-sig'
+    )
 
 
     # train_X, train_y = create_sequences(train_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
@@ -396,11 +420,14 @@ if __name__ == "__main__":
     # logger.info("数据预处理完成.")
 
     # 5. 创建 PyTorch Dataset 和 DataLoader
-    train_dataset = HasRiskDataset(train_df, label=ColumnsConfig.HAS_RISK_LABEL)
-    val_dataset = HasRiskDataset(val_df, label=ColumnsConfig.HAS_RISK_LABEL)
+    periods = [(1, 7), (8, 14), (15, 21)]
+    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(left, right) for left, right in periods]
+    has_risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
+    train_dataset = MultiTaskAndMultiLabelDataset(train_df, label=has_risk_label_list + days_label_list)
+    val_dataset = MultiTaskAndMultiLabelDataset(val_df, label=has_risk_label_list + days_label_list)
 
-    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, sampler=sample_probability(train_y),shuffle=False, num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
-    val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=config.NUM_WORKERS)
+    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
+    val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS)
     logger.info("数据加载器准备完毕.")
 
     # --- 模型、损失函数、优化器 ---
@@ -417,11 +444,11 @@ if __name__ == "__main__":
         'month': 12,
         'is_single': 2,
     }
-    model = Has_Risk_NFM(params).to(config.DEVICE) # 等待模型实现
+    model = Has_Risk_NFM_MultiLabel(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 
-    criterion = nn.CrossEntropyLoss()  # 假设是回归任务，使用均方误差
+    criterion = nn.BCEWithLogitsLoss()  # 假设是回归任务，使用均方误差
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)  # L2正则化
 
     # 初始化早停器
