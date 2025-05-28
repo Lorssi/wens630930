@@ -6,73 +6,150 @@ from tqdm import tqdm
 logger = setup_logger(logger_config.TRAIN_LOG_FILE_PATH, logger_name="PreprocessingLogger")
 
 class IntroDataPreprocessor:
-    def __init__(self, data_path, index_data, running_dt= "2024-10-1", interval_days=400):
-        self.data_path = data_path
-        self.id_column = 'org_inv_dk'
-        self.date_column = 'intro_dt' 
-        self.vendor_nm = 'vendor_nm' # 供应商名称
-        self.cffromhogp_nm = 'cffromhogp_nm' # 来源猪场名称
-
-        self.index_data = index_data.copy()  # 深拷贝，避免对原数据的修改
-        self.index_id_column = 'pigfarm_dk'
-        self.index_date_column = 'stats_dt'
-
-        self.end_date = pd.to_datetime(running_dt) - pd.Timedelta(days=1)  # 计算截止日期
-        self.intro_start_date = self.end_date - pd.Timedelta(days=interval_days) - pd.Timedelta(days=95)
-        self.intro_data = self.load_data()
-
-        if self.intro_data is not None:
-            # 确保在计算前，数据是按猪场和日期排序的
-            self.intro_data.sort_values(by=[self.date_column, self.id_column], inplace=True)
-            logger.info(f"引种数据按 '{self.id_column}' 和 '{self.date_column}' 排序完成")
+    def __init__(self, intro_data_path, tame_data_path, index_data):
+        self.intro_data_path = intro_data_path
+        self.tame_data_path = tame_data_path
+        self.index_data = index_data
+        self.feature_columns = ['intro_source_num_90d', 'intro_source_is_single', 'intro_times_30d', 'intro_times_90d']
+        self.load_data()
 
     def load_data(self):
-        """加载数据"""
+        # 加载引种数据
         try:
-            df = pd.read_csv(self.data_path, encoding='utf-8')
-            logger.info(f"成功加载引种数据: {self.data_path}")
+            self.intro_data = pd.read_csv(self.intro_data_path, encoding='utf-8')
+            # 把来源猪场的空值由供应商名字填充
+            self.intro_data['cffromhogp_nm'] = self.intro_data['cffromhogp_nm'].fillna(self.intro_data['vendor_nm'])
+            # 排除 boar_src_type 为 '选留' 的记录
+            self.intro_data = self.intro_data[self.intro_data['boar_src_type'] != '选留']
+            self.intro_data['intro_dt'] = pd.to_datetime(self.intro_data['intro_dt'])
+            # 排序，用于加快计算速度
+            self.intro_data.sort_values(['org_inv_dk', 'intro_dt'], inplace=True)
+        except Exception as e:
+            logger.error(f"加载引种数据失败: {e}")
+            self.intro_data = pd.DataFrame()  # 失败时初始化为空数据框
 
-            df[self.date_column] = pd.to_datetime(df[self.date_column])  # 转换为 datetime 格式
+        # 加载入群数据
+        try:
+            self.tame_data = pd.read_csv(self.tame_data_path, encoding='utf-8', low_memory=False)
+            self.tame_data.rename(columns={'tmp_ads_pig_isolation_tame_risk_l1_n2.org_inv_dk': 'org_inv_dk', 'tmp_ads_pig_isolation_tame_risk_l1_n2.bill_dt': 'bill_dt'}, inplace=True)
+            self.tame_data['bill_dt'] = pd.to_datetime(self.tame_data['bill_dt'])
+            # 排序，用于加快计算速度
+            self.tame_data.sort_values(['org_inv_dk', 'bill_dt'], inplace=True)
+        except Exception as e:
+            logger.error(f"加载驯化数据失败: {e}")
+            self.tame_data = pd.DataFrame()  # 失败时初始化为空数据框
 
-            # 过滤数据，确保日期在指定范围内
-            df = df[(df[self.date_column] >= self.intro_start_date) & (df[self.date_column] <= self.end_date)]
-            # 排序移到 __init__ 中，在加载后统一执行，确保后续操作基于正确的顺序
-            return df
-        except FileNotFoundError:
-            logger.error(f"错误: 数据文件未找到于 {self.data_path}")
-            return None
-        except KeyError as e:
-            logger.error(f"加载数据时发生列名错误: {e}. 请检查CSV文件中的列名是否与期望的列名匹配 ({self.date_column}, {self.id_column} 等).")
-            return None
+    def calculate_intro_feature(self):
+        """
+        计算引种特征 - 高效优化版，先预处理数据再计算特征
+        """
+        if self.intro_data.empty:
+            logger.warning("引种数据为空，无法计算特征")
+            return self.index_data
+            
+        # 避免在原始数据上修改
+        result = self.index_data.copy()
         
-    def calculate_is_single_and_intro_num(self):
-        self.intro_data['intro_source'] = self.intro_data[self.cffromhogp_nm].fillna(self.intro_data[self.vendor_nm])
-
-        index_group = self.index_data.groupby(self.index_id_column)
-        intro_group = self.intro_data.groupby(self.id_column)
-
-        for index_id, index_group_df in tqdm(index_group, desc="Processing Index Data", total=len(index_group)):
-            # 获取当前猪场的引种数据
-            intro_data = intro_group.get_group(index_id) if index_id in intro_group.groups else None
-
-            if intro_data is not None:
-                for index, row in index_group_df.iterrows():
-                    # 获取当前猪场的日期
-                    current_date = row[self.index_date_column]
-                    # 计算当前日期前7天的日期范围
-                    start_date = current_date - pd.Timedelta(days=89)
-                    end_date = current_date
-
-                    # 筛选出在当前日期前7天内的引种数据
-                    intro_data_filtered = intro_data[(intro_data[self.date_column] >= start_date) & 
-                                                     (intro_data[self.date_column] <= end_date)]
-
-                    # 计算 is_single 和 intro_num
-                    if not intro_data_filtered.empty:
-                        intro_num = intro_data_filtered['intro_dt'].nunique()  # 引种数量
-                        is_single = 0 if intro_data_filtered['intro_source'].nunique() > 1 else 1
+        logger.info("预处理数据计算特征...")
+                
+        # 获取所有需要计算特征的日期
+        all_dates = result['stats_dt'].unique()
+        min_date = result['stats_dt'].min()
+        max_date = result['stats_dt'].max()
+        
+        logger.info(f"创建所有猪场的特征映射表 ({min_date} 到 {max_date})...")
+        
+        # 创建一个空DataFrame用于存储所有特征
+        farm_ids = result['pigfarm_dk'].unique()
+        
+        # 初始化一个字典存储所有特征
+        farm_features = {}
+        
+        # 为每个猪场预计算特征
+        for farm_id in tqdm(farm_ids, desc="计算猪场特征"):
+            # 筛选该猪场的所有引种记录
+            farm_intro = self.intro_data[self.intro_data['org_inv_dk'] == farm_id]
+            # 筛选该猪场的所有入群记录
+            farm_tame = self.tame_data[self.tame_data['org_inv_dk'] == farm_id]
+            
+            has_intro = not farm_intro.empty
+            has_tame = not farm_tame.empty
+            
+            if not has_intro and not has_tame:
+                continue
+                
+            # 为这个猪场创建一个日期字典
+            farm_dict = {}
+                
+            # 对每个日期计算特征 (只计算index_data中的日期)
+            for date in all_dates:
+                feature_dict = {
+                    'intro_source_num_90d': 0,
+                    'intro_source_is_single': 0, 
+                    'intro_times_90d': 0,
+                    'intro_times_30d': 0,
+                    'boar_tame_num_30d': 0
+                }
+                
+                # 计算引种特征
+                if has_intro:
+                    # 创建90天和30天的过滤条件
+                    mask_90d = (farm_intro['intro_dt'] <= date) & (farm_intro['intro_dt'] >= date - pd.Timedelta(days=90))
+                    mask_30d = (farm_intro['intro_dt'] <= date) & (farm_intro['intro_dt'] >= date - pd.Timedelta(days=30))
+                    
+                    # 直接计算特征值，无需创建中间DataFrame
+                    if mask_90d.any():  # 如果有任何符合条件的行
+                        # 计算90天内的唯一来源数
+                        unique_sources = farm_intro.loc[mask_90d, 'cffromhogp_nm'].nunique()
                         
-                        self.index_data.loc[index, 'is_single'] = is_single
-                        self.index_data.loc[index, 'intro_num'] = intro_num
+                        # 更新特征值
+                        feature_dict.update({
+                            'intro_source_num_90d': unique_sources,
+                            'intro_source_is_single': 1 if unique_sources <= 1 else 0,
+                            'intro_times_90d': mask_90d.sum(),  # 直接对掩码求和获取行数
+                            'intro_times_30d': mask_30d.sum()   # 直接对掩码求和获取行数
+                        })
+                
+                # 计算入群特征
+                if has_tame:
+                    # 直接计算30天内入群数量，无需创建中间DataFrame
+                    mask_tame_30d = (farm_tame['bill_dt'] <= date) & (farm_tame['bill_dt'] >= date - pd.Timedelta(days=30))
+                    feature_dict['boar_tame_num_30d'] = mask_tame_30d.sum()
+                    
+                farm_dict[date] = feature_dict
+                        
+            # 存储这个猪场的所有特征
+            farm_features[farm_id] = farm_dict
+        
+        logger.info("将预计算特征合并到结果中...")
+        
+        # 将特征合并到结果DataFrame中，模拟T+1架构
+        new_features = []
+        for _, row in tqdm(result.iterrows(), total=len(result), desc="合并特征"):
+            farm_id = row['pigfarm_dk']
+            stats_date = row['stats_dt']
+            
+            # 查找前一天的特征，模拟T+1
+            prev_date = stats_date - pd.Timedelta(days=1)
+            
+            if farm_id in farm_features and prev_date in farm_features[farm_id]:
+                feature_dict = {'pigfarm_dk': farm_id, 'stats_dt': stats_date}
+                feature_dict.update(farm_features[farm_id][prev_date])
+                new_features.append(feature_dict)
+        
+        # 将特征转换为DataFrame并与结果合并
+        if new_features:
+            features_df = pd.DataFrame(new_features)
+            features_df['stats_dt'] = features_df['stats_dt'] + pd.Timedelta(days=1)  # 确保日期是T+1，用于模拟当天没有数据的情况
+            result = pd.merge(result, features_df, on=['pigfarm_dk', 'stats_dt'], how='left')
+        
+        # 填充缺失的特征值为0
+        for col in self.feature_columns:
+            if col in result.columns:
+                result[col] = result[col].fillna(0)
+            else:
+                result[col] = 0
+        
+        logger.info("引种特征计算完成")
 
-        return self.index_data
+        return result

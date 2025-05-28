@@ -6,7 +6,7 @@ class SurroundingPreprocessing:
     def __init__(self, index_data=None):
         self.index_data = index_data.copy()
 
-    def calculate_surrounding_information(self):
+    def calculate_surrounding_feature(self):
         # 确保stats_dt是datetime类型
         self.index_data['stats_dt'] = pd.to_datetime(self.index_data['stats_dt'])
         
