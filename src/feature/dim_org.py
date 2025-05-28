@@ -3,6 +3,7 @@ import numpy as np
 from utils.logger import setup_logger
 from configs.logger_config import logger_config
 from tqdm import tqdm
+from configs.feature_config import DataPathConfig, ColumnsConfig
 logger = setup_logger(logger_config.TRAIN_LOG_FILE_PATH, logger_name="PreprocessingLogger")
 
 class OrgDataPreprocessor:
@@ -31,5 +32,5 @@ class OrgDataPreprocessor:
 
         data = pd.merge(feature_data, self.org_data, left_on=self.left_id_column, right_on=self.id_column, how='left')
 
-
+        data.to_csv(DataPathConfig.ORG_FEATURE_DATA_SAVE_PATH, index=False, encoding='utf-8')
         return data

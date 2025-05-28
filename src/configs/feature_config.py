@@ -28,6 +28,10 @@ class DataPathConfig:
     INTRO_DATA_SAVE_PATH = INTERIM_DATA_DIR / "intro_data.csv"
 
     DIM_ORG_INV_PATH = RAW_DATA_DIR / "dim_org_inv.csv"
+    ORG_FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "org_feature_data.csv"
+
+    PRRS_CHECK_DATA_PATH = RAW_DATA_DIR / "TMP_PIG_ORG_DISEASE_CHECK_RESULT_DAY  检测数据猪场.csv"
+    PRRS_PICK_DATA_SAVE_PATH = INTERIM_DATA_DIR / "prrs_pick_check_data.csv"
 
     FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "feature_data.csv"
     TRAIN_TRANSFORMED_FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "train_transformed_feature_data.csv"
@@ -49,15 +53,19 @@ class DataPathConfig:
         return path
 
 class ColumnsConfig:
+    INDEX_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'city', 'abortion_rate']
+    MAIN_PREDICT_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abort_1_7', 'abort_8_14', 'abort_15_21', 'abort_1_7_pred', 'abort_8_14_pred', 'abort_15_21_pred',
+                                'abort_1_7_decision', 'abort_8_14_decision', 'abort_15_21_decision',
+                                'abort_1_7_threshold', 'abort_8_14_threshold', 'abort_15_21_threshold']
 
     # TRANSFORM_FIT
-    DISCRETE_COLUMNS = ['pigfarm_dk', 'province', 'city']
-    CONTINUOUS_COLUMNS = ['l3_abortion_mean', 'l3_abortion_mean_7d', 'l3_abortion_mean_15d', 'l3_abortion_mean_30d']
-    INVARIANT_COLUMNS = ['month']
+    DISCRETE_COLUMNS = ['pigfarm_dk','city']
+    CONTINUOUS_COLUMNS = ['abortion_rate_1_7','check_out_ratio_7d', 'wild_check_out_ratio_7d']
+    INVARIANT_COLUMNS = ['season']
 
     # MODEL_FIT
-    MODEL_DISCRETE_COLUMNS = ['pigfarm_dk', 'province', 'city', 'month']
-    MODEL_CONTINUOUS_COLUMNS = ['l3_abortion_mean', 'l3_abortion_mean_7d', 'l3_abortion_mean_15d', 'l3_abortion_mean_30d']
+    MODEL_DISCRETE_COLUMNS = ['pigfarm_dk','city','season']
+    MODEL_CONTINUOUS_COLUMNS = ['abortion_rate_1_7', 'check_out_ratio_7d', 'wild_check_out_ratio_7d']
     MODEL_DIRECT_COLUMNS = []
 
     # COLUMNS
@@ -66,7 +74,7 @@ class ColumnsConfig:
     # label
     HAS_RISK_LABEL = 'has_risk_label'
 
-    HAS_RISK_4_CLASS_PRE = 'abortion_{}_{}'
+    HAS_RISK_4_CLASS_PRE = 'abort_{}_{}'
     DAYS_RISK_8_CLASS_PRE = 'days_{}_{}'
 
     HAS_RISK_3_POINT_LABEL = ["future_7_label", "future_14_label", "future_21_label"]

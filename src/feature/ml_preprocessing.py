@@ -113,9 +113,14 @@ class MLDataPreprocessor:
         # 应用计算函数
         self.ml_data[new_column_name] = self.ml_data.apply(calculate_rate, axis=1)
 
+        abortion_feature = self.ml_data[[self.date_column, self.id_column, new_column_name]].copy()
+        abortion_feature.rename(columns={new_column_name: 'abortion_rate_1_7'}, inplace=True)
+        abortion_feature['stats_dt'] = abortion_feature[self.date_column] + pd.DateOffset(days=1)  # 将日期加1天，确保预警运行边界日期的特征为观察期窗口特征
+
+
         self.index_data = pd.merge(self.index_data, self.ml_data[[self.date_column, self.id_column, new_column_name]],
                                    on=[self.date_column, self.id_column], how='left')
-        
+        self.index_data = pd.merge(self.index_data, abortion_feature, on=[self.date_column, self.id_column], how='left')
         # 可以选择删除中间列
         # self.ml_data.drop(columns=['recent_7day_abort_sum'], inplace=True)
 

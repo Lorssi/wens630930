@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 from configs.logger_config import logger_config
 from configs.feature_config import ColumnsConfig, DataPathConfig
 import config
-from dataset.dataset import HasRiskDataset, MultiTaskAndMultiLabelDataset
+from dataset.dataset import HasRiskDataset, MultiTaskDataset, DaysDataset
 from utils.logger import setup_logger
 from utils.early_stopping import EarlyStopping
 from utils.save_csv import save_to_csv, read_csv
@@ -28,7 +28,9 @@ from feature.gen_feature import FeatureGenerator
 from feature.gen_label import LabelGenerator
 from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
-from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel
+from model.nfm import Has_Risk_NFM
+from model.multi_task_nfm import Multi_Task_NFM
+from model.days_nfm import Days_NFM
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 # 设置浮点数显示为小数点后2位，抑制科学计数法
 # np.set_printoptions(precision=2, suppress=True)
@@ -46,9 +48,6 @@ def _collate_fn(batch):
     # 初始化列表
     features_list = []
     
-    # 多标签任务（前三个标签）
-    multi_label_list = []
-    
     # 多任务分类（后三个标签）
     days_label_1_7_list = []
     days_label_8_14_list = []
@@ -58,24 +57,19 @@ def _collate_fn(batch):
         # 添加特征
         features_list.append(feature)
         
-        # 多标签任务（前三个）- 需要作为一个向量
-        multi_label = label[:3]  # 前三个标签
-        multi_label_list.append(multi_label)
-        
         # 多任务分类（后三个）- 每个任务单独处理
-        days_label_1_7_list.append(label[3])  # 1-7天标签
-        days_label_8_14_list.append(label[4]) # 8-14天标签
-        days_label_15_21_list.append(label[5]) # 15-21天标签
+        days_label_1_7_list.append(label[0])  # 1-7天标签
+        days_label_8_14_list.append(label[1]) # 8-14天标签
+        days_label_15_21_list.append(label[2]) # 15-21天标签
     
     # 转换为张量
     features_tensor = torch.tensor(features_list, dtype=torch.float32)
-    multi_label_tensor = torch.tensor(multi_label_list, dtype=torch.float32)  # 多标签用float
     days_1_7_tensor = torch.tensor(days_label_1_7_list, dtype=torch.long)    # 分类标签用long
     days_8_14_tensor = torch.tensor(days_label_8_14_list, dtype=torch.long)
     days_15_21_tensor = torch.tensor(days_label_15_21_list, dtype=torch.long)
     
     # 返回特征和所有标签
-    return features_tensor, (multi_label_tensor, days_1_7_tensor, days_8_14_tensor, days_15_21_tensor)
+    return features_tensor, days_1_7_tensor, days_8_14_tensor, days_15_21_tensor
 
     # 针对空值做处理
 def mask_feature_null(data = None, mode='train'):
@@ -114,7 +108,7 @@ def mask_feature_null(data = None, mode='train'):
 
 
 def predict_model(model, predict_loader, device, predict_index):
-    logger.info("开始多标签预测...")
+    logger.info("开始多任务预测...")
     
     # 加载训练好的模型权重
     if os.path.exists(config.MODEL_SAVE_PATH):
@@ -127,58 +121,82 @@ def predict_model(model, predict_loader, device, predict_index):
     # 切换到评估模式
     model.eval()
     
-    # 存储预测结果
-    all_predictions = []
-    all_probs = []
+    # 存储三个任务的预测结果
+    all_predictions_1_7 = []
+    all_probs_1_7 = []
+    
+    all_predictions_8_14 = []
+    all_probs_8_14 = []
+    
+    all_predictions_15_21 = []
+    all_probs_15_21 = []
     
     # 不计算梯度，提高效率
     with torch.no_grad():
-        for inputs, _ in tqdm(predict_loader, desc="预测进度"):
+        for inputs, _, _, _ in tqdm(predict_loader, desc="预测进度"):
             # 将输入数据移动到指定设备
             inputs = inputs.to(device)
             
-            # 前向传播，获取模型输出
-            outputs = model(inputs)
+            # 前向传播，获取三个任务的模型输出
+            days_1_7_output, days_8_14_output, days_15_21_output = model(inputs)
             
-            # 多标签任务使用sigmoid获取各标签概率
-            probs = torch.sigmoid(outputs)
+            # 处理1-7天任务
+            probs_1_7 = torch.softmax(days_1_7_output, dim=1)
+            _, predicted_1_7 = torch.max(days_1_7_output, 1)
+            all_predictions_1_7.append(predicted_1_7.cpu().numpy())
+            all_probs_1_7.append(probs_1_7.cpu().numpy())
             
-            # 使用阈值0.5获取二值化预测结果
-            predicted = (probs > 0.5).float()
+            # 处理8-14天任务
+            probs_8_14 = torch.softmax(days_8_14_output, dim=1)
+            _, predicted_8_14 = torch.max(days_8_14_output, 1)
+            all_predictions_8_14.append(predicted_8_14.cpu().numpy())
+            all_probs_8_14.append(probs_8_14.cpu().numpy())
             
-            # 将张量转移到CPU并转换为NumPy数组
-            probs_np = probs.cpu().numpy()
-            predicted_np = predicted.cpu().numpy()
-            
-            # 添加到结果列表
-            all_predictions.append(predicted_np)
-            all_probs.append(probs_np)
+            # 处理15-21天任务
+            probs_15_21 = torch.softmax(days_15_21_output, dim=1)
+            _, predicted_15_21 = torch.max(days_15_21_output, 1)
+            all_predictions_15_21.append(predicted_15_21.cpu().numpy())
+            all_probs_15_21.append(probs_15_21.cpu().numpy())
     
     # 合并所有批次的预测结果
-    predictions = np.vstack(all_predictions)
-    probabilities = np.vstack(all_probs)
+    predictions_1_7 = np.concatenate(all_predictions_1_7)
+    probabilities_1_7 = np.concatenate(all_probs_1_7)
+    
+    predictions_8_14 = np.concatenate(all_predictions_8_14)
+    probabilities_8_14 = np.concatenate(all_probs_8_14)
+    
+    predictions_15_21 = np.concatenate(all_predictions_15_21)
+    probabilities_15_21 = np.concatenate(all_probs_15_21)
 
     # 添加安全检查，确保长度一致
-    if len(predictions) != len(predict_index):
-        logger.error(f"预测结果长度 ({len(predictions)}) 与 predict_index 长度 ({len(predict_index)}) 不匹配!")
+    if len(predictions_1_7) != len(predict_index):
+        logger.error(f"预测结果长度 ({len(predictions_1_7)}) 与 predict_index 长度 ({len(predict_index)}) 不匹配!")
         return None
     
-    logger.info(f"预测完成，共预测 {len(predictions)} 个样本")
-    
-    # 获取标签名称
-    periods = [(1, 7), (8, 14), (15, 21)]
-    label_names = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
+    logger.info(f"预测完成，共预测 {len(predictions_1_7)} 个样本")
     
     # 将预测结果添加到预测索引DataFrame中
-    for i, label_name in enumerate(label_names):
-        predict_index[f'{label_name}_decision'] = predictions[:, i]
-        predict_index[f'{label_name}_pred'] = probabilities[:, i]
-        predict_index[f'{label_name}_threshold'] = 0.5
+    
+    # 1-7天任务预测结果
+    predict_index['predicted_days_1_7'] = predictions_1_7
+    for i in range(probabilities_1_7.shape[1]):
+        predict_index[f'prob_days_1_7_class_{i}'] = probabilities_1_7[:, i]
+    
+    # 8-14天任务预测结果
+    predict_index['predicted_days_8_14'] = predictions_8_14
+    for i in range(probabilities_8_14.shape[1]):
+        predict_index[f'prob_days_8_14_class_{i}'] = probabilities_8_14[:, i]
+    
+    # 15-21天任务预测结果
+    predict_index['predicted_days_15_21'] = predictions_15_21
+    for i in range(probabilities_15_21.shape[1]):
+        predict_index[f'prob_days_15_21_class_{i}'] = probabilities_15_21[:, i]
     
     # 输出预测统计信息
-    for i, label in enumerate(label_names):
-        pos_count = np.sum(predictions[:, i])
-        logger.info(f"{label} 预测分布: 正例={pos_count}, 负例={len(predictions)-pos_count}")
+    logger.info("=== 预测结果统计 ===")
+    logger.info(f"1-7天任务预测类别分布:\n{predict_index['predicted_days_1_7'].value_counts()}")
+    logger.info(f"8-14天任务预测类别分布:\n{predict_index['predicted_days_8_14'].value_counts()}")
+    logger.info(f"15-21天任务预测类别分布:\n{predict_index['predicted_days_15_21'].value_counts()}")
     
     return predict_index
 
@@ -196,7 +214,7 @@ if __name__ == "__main__":
         interval_days=config.main_predict.PREDICT_INTERVAL,
     )
     logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_period_generate_multi_label_alter()
+    X, y = label_generator.days_period_generate_multi_task_alter()
     X.reset_index(drop=True, inplace=True)
     y.reset_index(drop=True, inplace=True)
     predict_index_label = pd.concat([X, y], axis=1)
@@ -232,14 +250,13 @@ if __name__ == "__main__":
     # logger.info(f"离散特征的类别数量: {discrete_class_num}")
 
     # 预测数据
-    periods = [(1, 7), (8, 14), (15, 21)]
-    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(left, right) for left, right in periods]
-    has_risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
-
     predict_X = transformed_feature_df.copy()
-    predict_y = y.copy()
     predict_X = predict_X[ColumnsConfig.feature_columns]
-    predict_y = predict_y[has_risk_label_list + days_label_list]  # 只保留需要的标签列
+
+    periods = [(1, 7), (8, 14), (15, 21)]
+    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(start, end) for start, end in periods]
+    predict_y = y.copy()
+    predict_y = predict_y[days_label_list]
 
     # 生成mask列
     transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
@@ -264,7 +281,7 @@ if __name__ == "__main__":
     # logger.info("数据预处理完成.")
 
     # 5. 创建 PyTorch Dataset 和 DataLoader
-    predict_dataset = MultiTaskAndMultiLabelDataset(predict_df, label=has_risk_label_list + days_label_list)
+    predict_dataset = DaysDataset(predict_df, label=days_label_list)
 
     predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
     logger.info("数据加载器准备完毕.")
@@ -281,15 +298,16 @@ if __name__ == "__main__":
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
         'province': feature_dict[Categorical_feature[1]].category_encode.size,
         'city': feature_dict[Categorical_feature[2]].category_encode.size,
-        'season': 4,
+        'month': 12,
+        'is_single': 2,
     }
-    model = Has_Risk_NFM_MultiLabel(params).to(config.DEVICE) # 等待模型实现
+    model = Days_NFM(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
     predict_df = predict_model(model, predict_loader, config.DEVICE, predict_index_label)
-    predict_df = predict_df[ColumnsConfig.MAIN_PREDICT_DATA_COLUMN]  # 只保留需要的列
+
     # 保存预测结果
     save_to_csv(df=predict_df, filepath=config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH)
     logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")

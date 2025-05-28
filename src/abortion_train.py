@@ -326,7 +326,7 @@ if __name__ == "__main__":
         interval_days=config.TRAIN_INTERVAL
     )
     logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_period_generate_multi_label_alter()
+    X, y = label_generator.abortion_predict_gen_sequence_label()
     logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
     logger.info(f"X,y特征数据形状为：{X.shape}， 标签数据形状为：{y.shape}")
     
@@ -439,8 +439,10 @@ if __name__ == "__main__":
         'dropout': config.DROPOUT,
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
-        'city': feature_dict[Categorical_feature[1]].category_encode.size,
-        'season': 4
+        'province': feature_dict[Categorical_feature[1]].category_encode.size,
+        'city': feature_dict[Categorical_feature[2]].category_encode.size,
+        'month': 12,
+        'is_single': 2,
     }
     model = Has_Risk_NFM_MultiLabel(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")

@@ -3,6 +3,7 @@ from feature.intro_preprocessing import IntroDataPreprocessor
 from feature.season_preprocessing import SeasonPreprocessor
 from feature.dim_org import OrgDataPreprocessor
 from feature.surrounding_preprocessing import SurroundingPreprocessing
+from feature.check_preprocessing import CheckPreprocessor
 from configs.feature_config import DataPathConfig, ColumnsConfig
 from configs.logger_config import logger_config
 import pandas as pd
@@ -63,7 +64,7 @@ class FeatureGenerator:
             return
 
         # 计算季节特征
-        season_feature = season_data.calculate_month()
+        season_feature = season_data.calculate_season()
         logger.info("季节特征计算完成")
         
         return season_feature
@@ -95,6 +96,14 @@ class FeatureGenerator:
             logger.error("周边信息数据加载失败，无法计算周边信息特征")
             return
         return surrounding_data.index_data
+    
+    def prrs_check_feature(self, index_data=None):
+        """
+        计算PRRS检查特征
+        """
+        checkPreprocessor = CheckPreprocessor(index_data=index_data, running_dt=self.running_dt, interval_days=self.interval_days)
+        check_data = checkPreprocessor.calculate_check_out_ratio()
+        return check_data
 
     def generate_features(self):
         """
@@ -104,11 +113,11 @@ class FeatureGenerator:
             logger.error("流产率数据未加载，无法生成特征")
             return
         feature = self.abortion_data.copy()
+        feature = self.dim_org_feature(feature)
         # feature = self.intro_data_feature(self.feature)
         feature = self.season_feature(feature)
-        feature = self.dim_org_feature(feature)
-
-        feature = self.surrounding_feature(feature)
+        # feature = self.surrounding_feature(feature)
+        feature = self.prrs_check_feature(feature)
 
         feature = feature[['stats_dt'] + ColumnsConfig.feature_columns]
         feature.to_csv(DataPathConfig.FEATURE_DATA_SAVE_PATH, index=False, encoding='utf-8')

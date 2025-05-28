@@ -1,6 +1,7 @@
 import pandas as pd
 from tqdm import tqdm
-
+from configs.feature_config import ColumnsConfig,DataPathConfig
+import numpy as np
 class SurroundingPreprocessing:
     def __init__(self, index_data=None):
         self.index_data = index_data.copy()
@@ -14,7 +15,7 @@ class SurroundingPreprocessing:
         same_day_avg = same_day_avg.rename(columns={'abortion_rate': 'l3_abortion_mean'})
         
         # 合并结果
-        # same_day_avg['stats_dt'] = self.index_data['stats_dt'] + pd.Timedelta(days=1)  # 模拟当天没有数据
+        # same_day_avg['stats_dt'] = same_day_avg['stats_dt'] + pd.Timedelta(days=1)  # 模拟当天没有数据
         self.index_data = self.index_data.merge(same_day_avg, on=['l3_org_inv_dk', 'stats_dt'], how='left')
         
         # 2. 使用pandas rolling功能优化滚动平均值计算
