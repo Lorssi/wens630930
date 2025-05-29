@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from config import EMBEDDING_SIZE
 
 class TaskHead_HasRisk(nn.Module):
-    def __init__(self, input_dim=64, output_dim=4):
+    def __init__(self, input_dim=64, output_dim=3):
         super().__init__()
         self.head = nn.Linear(input_dim, output_dim)  # 任务特定层
     
@@ -95,7 +95,7 @@ class Multi_Task_NFM(nn.Module):
             nn.Linear(32, 16)
         )
 
-        self.task_head_has_risk = TaskHead_HasRisk(input_dim=16, output_dim=4)
+        self.task_head_has_risk = TaskHead_HasRisk(input_dim=16, output_dim=3)
         self.task_head_days = TaskHead_Days(input_dim=16, output_dim=8)
         
     
@@ -161,7 +161,7 @@ class Multi_Task_NFM(nn.Module):
         
         # 输入到MLP
         output = self.mlp(interaction_output)
-        has_risk_output = self.task_head_has_risk(output)
+        # has_risk_output = self.task_head_has_risk(output)
         days_1_7_output, days_8_14_output, days_15_21_output = self.task_head_days(output)
         
-        return has_risk_output, days_1_7_output, days_8_14_output, days_15_21_output
+        return days_1_7_output, days_8_14_output, days_15_21_output
