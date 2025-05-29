@@ -4,6 +4,7 @@ from feature.season_preprocessing import SeasonPreprocessor
 from feature.dim_org import OrgDataPreprocessor
 from feature.surrounding_preprocessing import SurroundingPreprocessing
 from feature.check_preprocessing import CheckPreprocessor
+from feature.death_confirm_preprocessing import DeathConfirmPreprocessor
 from configs.feature_config import DataPathConfig, ColumnsConfig
 from configs.logger_config import logger_config
 import pandas as pd
@@ -112,6 +113,14 @@ class FeatureGenerator:
         """
         pass
 
+    def death_confirm_feature(self, index_data=None):
+        """
+        计算死亡确认数据特征
+        """
+        death_confirm_data = DeathConfirmPreprocessor(index_data=index_data, running_dt=self.running_dt, interval_days=self.interval_days, death_confirm_data_path=DataPathConfig.DEATH_CONFIRM_DATA_PATH)
+        death_confirm_feature = death_confirm_data.calculate_intro_feature()
+        return death_confirm_feature
+
 
     def generate_features(self):
         """
@@ -124,8 +133,9 @@ class FeatureGenerator:
         feature = self.dim_org_feature(feature)
         # feature = self.intro_data_feature(self.feature)
         feature = self.season_feature(feature)
-        # feature = self.surrounding_feature(feature)
+        feature = self.surrounding_feature(feature)
         feature = self.prrs_check_feature(feature)
+        feature = self.death_confirm_feature(feature)
 
         feature = feature[['stats_dt'] + ColumnsConfig.feature_columns]
         feature.to_csv(DataPathConfig.FEATURE_DATA_SAVE_PATH, index=False, encoding='utf-8')

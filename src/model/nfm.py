@@ -204,7 +204,7 @@ class Has_Risk_NFM_MultiLabel(nn.Module):
         for feat in self.discrete_cols:
             if feat in params.keys():
                 self.embeddings[feat] = nn.Embedding(
-                    num_embeddings=int(params[feat] + 2),
+                    num_embeddings=int(params[feat] + 1),
                     embedding_dim=int(self.embedding_dim)
                 )
         
@@ -217,13 +217,10 @@ class Has_Risk_NFM_MultiLabel(nn.Module):
         self.feature_interaction = FeatureInteraction(emb_size=self.embedding_dim)
         
         # 输出层
-        self.mlp = nn.Sequential(
-            nn.Linear(self.embedding_dim, 16),
-            nn.BatchNorm1d(16),
-            nn.ReLU(),
-            nn.Dropout(self.dropout),
-            nn.Linear(16, 3)
-        )
+        self.mlp = make_mlp_layers(mlp_input_dim=EMBEDDING_SIZE, # 128
+                                   hidden_dims=[128, 64, 32, 8],
+                                #    hidden_dims=[512, 128, 32, 8],
+                                   mlp_output_dim=3)
         
     
     def forward(self, x):

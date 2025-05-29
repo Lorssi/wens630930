@@ -148,6 +148,9 @@ class CheckPreprocessor:
         # 确保有数据可处理
         if len(self.check_data) == 0:
             logger.warning("没有检测数据可供处理")
+            # 如果没有结果数据，添加默认列
+            self.index_data['check_out_ratio_7d'] = np.nan
+            self.index_data['wild_check_out_ratio_7d'] = np.nan
             return self.index_data
         
         # 为check_data添加标记，标识是否为野毒数据
@@ -204,9 +207,14 @@ class CheckPreprocessor:
                     'prrs_wild_7d_positive_rate': round(wild_positive_rate, 4)
                 })
         
+        
         # 将结果转换为DataFrame并与index_data合并
         if result_data:
             result_df = pd.DataFrame(result_data)
+
+            result_df['stats_dt'] = pd.to_datetime(result_df['stats_dt'])
+            result_df['stats_dt'] = result_df['stats_dt'] + pd.DateOffset(days=1)  # 将日期加1天，确保预警运行边界日期的特征为观察期窗口特征
+            
             self.index_data = self.index_data.merge(
                 result_df, 
                 on=['pigfarm_dk', 'stats_dt'], 

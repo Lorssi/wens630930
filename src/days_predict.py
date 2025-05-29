@@ -178,19 +178,19 @@ def predict_model(model, predict_loader, device, predict_index):
     # 将预测结果添加到预测索引DataFrame中
     
     # 1-7天任务预测结果
-    predict_index['predicted_days_1_7'] = predictions_1_7
+    predict_index['abort_day_1_7_pred'] = predictions_1_7
     for i in range(probabilities_1_7.shape[1]):
-        predict_index[f'prob_days_1_7_class_{i}'] = probabilities_1_7[:, i]
+        predict_index[f'prob_abort_day_1_7_pred_{i}'] = probabilities_1_7[:, i]
     
     # 8-14天任务预测结果
-    predict_index['predicted_days_8_14'] = predictions_8_14
+    predict_index['abort_day_8_14_pred'] = predictions_8_14
     for i in range(probabilities_8_14.shape[1]):
-        predict_index[f'prob_days_8_14_class_{i}'] = probabilities_8_14[:, i]
+        predict_index[f'prob_abort_day_1_7_pred_{i}'] = probabilities_8_14[:, i]
     
     # 15-21天任务预测结果
-    predict_index['predicted_days_15_21'] = predictions_15_21
+    predict_index['abort_day_15_21_pred'] = predictions_15_21
     for i in range(probabilities_15_21.shape[1]):
-        predict_index[f'prob_days_15_21_class_{i}'] = probabilities_15_21[:, i]
+        predict_index[f'prob_abort_day_1_7_pred_{i}'] = probabilities_15_21[:, i]
     
     # 输出预测统计信息
     logger.info("=== 预测结果统计 ===")
@@ -296,10 +296,9 @@ if __name__ == "__main__":
         'dropout': config.DROPOUT,
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
-        'province': feature_dict[Categorical_feature[1]].category_encode.size,
-        'city': feature_dict[Categorical_feature[2]].category_encode.size,
+        'city': feature_dict[Categorical_feature[1]].category_encode.size,
         'month': 12,
-        'is_single': 2,
+        'season': 4,
     }
     model = Days_NFM(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
@@ -309,5 +308,5 @@ if __name__ == "__main__":
     predict_df = predict_model(model, predict_loader, config.DEVICE, predict_index_label)
 
     # 保存预测结果
-    save_to_csv(df=predict_df, filepath=config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH)
+    save_to_csv(df=predict_df, filepath=config.main_predict.DAYS_PREDICT_RESULT_SAVE_PATH)
     logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")

@@ -51,4 +51,5 @@ class main_predict:
     PREDICT_DATA_DIR = DATA_DIR / "predict"
 
     HAS_RISK_PREDICT_RESULT_SAVE_PATH = PREDICT_DATA_DIR / "has_risk_predict_result.csv"
+    DAYS_PREDICT_RESULT_SAVE_PATH = PREDICT_DATA_DIR / "days_predict_result.csv"
 

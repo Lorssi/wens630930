@@ -517,10 +517,9 @@ if __name__ == "__main__":
         'dropout': config.DROPOUT,
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
-        'province': feature_dict[Categorical_feature[1]].category_encode.size,
-        'city': feature_dict[Categorical_feature[2]].category_encode.size,
+        'city': feature_dict[Categorical_feature[1]].category_encode.size,
         'month': 12,
-        'is_single': 2,
+        'season': 4,
     }
     model = Days_NFM(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")

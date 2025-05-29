@@ -35,32 +35,15 @@ def make_mlp_layers(mlp_input_dim, hidden_dims, mlp_output_dim, activate_func='r
     return mlp_layers
 
 class TaskHead_Days(nn.Module):
-    def __init__(self, input_dim=64, output_dim=1):  # 输出维度改为1
+    def __init__(self, input_dim=64, output_dim=8):
         super().__init__()
-        self.head_1_7 = nn.Linear(input_dim, output_dim)  # 回归任务输出1个值
-        self.head_8_14 = nn.Linear(input_dim, output_dim)  # 回归任务输出1个值
-        self.head_15_21 = nn.Linear(input_dim, output_dim)  # 回归任务输出1个值
-        
-        # 初始化输出层，帮助网络更快收敛到合适范围
-        for head in [self.head_1_7, self.head_8_14, self.head_15_21]:
-            nn.init.xavier_uniform_(head.weight)
-            nn.init.zeros_(head.bias)
+        self.head_1_7 = nn.Linear(input_dim, output_dim)  # 任务特定层
+        self.head_8_14 = nn.Linear(input_dim, output_dim)  # 任务特定层
+        self.head_15_21 = nn.Linear(input_dim, output_dim)  # 任务特定层
     
     def forward(self, x):
-        # 使用Sigmoid函数将输出约束在0-1之间，然后乘以7将范围扩展到0-7
-        return torch.sigmoid(self.head_1_7(x)) * 7, \
-               torch.sigmoid(self.head_8_14(x)) * 7, \
-               torch.sigmoid(self.head_15_21(x)) * 7
 
-# class TaskHead_Days(nn.Module):
-#     def __init__(self, input_dim=64, output_dim=8):
-#         super().__init__()
-#         self.head_1_7 = nn.Linear(input_dim, output_dim)  # 任务特定层
-#         self.head_8_14 = nn.Linear(input_dim, output_dim)  # 任务特定层
-#         self.head_15_21 = nn.Linear(input_dim, output_dim)  # 任务特定层
-    
-#     def forward(self, x):
-#         return self.head_1_7(x), self.head_8_14(x), self.head_15_21(x)
+        return self.head_1_7(x), self.head_8_14(x), self.head_15_21(x)
 
 class FeatureInteraction(nn.Module):
 
@@ -128,7 +111,7 @@ class Days_NFM(nn.Module):
         
         # 输出层
         self.mlp = make_mlp_layers(mlp_input_dim=EMBEDDING_SIZE, # 128
-                                   hidden_dims=[512, 128, 64, 32],
+                                   hidden_dims=[128, 64, 32],
                                 #    hidden_dims=[512, 128, 32, 8],
                                    mlp_output_dim=16)
 
@@ -198,7 +181,9 @@ class Days_NFM(nn.Module):
         
         # 输入到MLP
         output = self.mlp(interaction_output)
-        # has_risk_output = self.task_head_has_risk(output)
+
+        output = F.relu(output)
+
         days_1_7_output, days_8_14_output, days_15_21_output = self.task_head_days(output)
         
         return days_1_7_output, days_8_14_output, days_15_21_output
