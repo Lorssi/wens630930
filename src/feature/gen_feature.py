@@ -3,6 +3,7 @@ from feature.intro_preprocessing import IntroDataPreprocessor
 from feature.season_preprocessing import SeasonPreprocessor
 from feature.dim_org import OrgDataPreprocessor
 from feature.surrounding_preprocessing import SurroundingPreprocessing
+from feature.production_data_preprocessing import ProductionDataPreprocessor
 from configs.feature_config import DataPathConfig, ColumnsConfig
 from configs.logger_config import logger_config
 import pandas as pd
@@ -101,8 +102,13 @@ class FeatureGenerator:
         """
         计算生产数据特征
         """
-        pass
+        production_data = ProductionDataPreprocessor(DataPathConfig.ML_DATA_PATH, running_dt=self.running_dt, interval_days=self.interval_days)
+        production_data.calculate_production_feature()
+        if production_data.index_data is None:
+            logger.error("生产数据加载失败，无法计算生产数据特征")
+            return
 
+        return production_data.index_data
 
     def generate_features(self):
         """
