@@ -112,7 +112,7 @@ class FeatureGenerator:
         """
         计算生产数据特征
         """
-        production_data = ProductionDataPreprocessor(data_path=DataPathConfig.path, index_data=index_data, running_dt=self.running_dt, interval_days=self.interval_days)
+        production_data = ProductionDataPreprocessor(data_path=DataPathConfig.ML_DATA_PATH , index_data=index_data, running_dt=self.running_dt, interval_days=self.interval_days)
         production_feature = production_data.calculate_production_feature()
         return production_feature
 

@@ -63,8 +63,12 @@ class IntroDataPreprocessor:
  
         # 获取所有需要计算特征的日期（T+1模式）
         all_stats_dates = sorted(index_data_copy['stats_dt'].unique())
-        # 获取需要计算的日期（T+1模式下是stats_dt日期的前一天）
-        all_calc_dates = [date - pd.Timedelta(days=1) for date in all_stats_dates]
+        # 获取需要计算的日期，扩大范围到前后5天
+        min_date = min(all_stats_dates)
+        max_date = max(all_stats_dates)
+        expanded_min_date = min_date - pd.Timedelta(days=5)
+        expanded_max_date = max_date + pd.Timedelta(days=5)
+        all_calc_dates = pd.date_range(start=expanded_min_date, end=expanded_max_date)
         
         # 创建一个空DataFrame用于存储所有特征
         farm_ids = index_data_copy['pigfarm_dk'].unique()
@@ -130,25 +134,32 @@ class IntroDataPreprocessor:
         
         logger.info("将预计算特征合并到结果中...")
         
-        # 将特征合并到结果DataFrame中，模拟T+1架构
-        new_features = []
-        for _, row in tqdm(index_data_copy.iterrows(), total=len(index_data_copy), desc="合并特征"):
-            farm_id = row['pigfarm_dk']
-            stats_date = row['stats_dt']
-            
-            # 查找前一天的特征，模拟T+1
-            prev_date = stats_date - pd.Timedelta(days=1)
-            
-            if farm_id in farm_features and prev_date in farm_features[farm_id]:
-                feature_dict = {'pigfarm_dk': farm_id, 'stats_dt': stats_date}
-                feature_dict.update(farm_features[farm_id][prev_date])
-                new_features.append(feature_dict)
-        
-        # 将特征转换为DataFrame并与结果合并
-        if new_features:
-            features_df = pd.DataFrame(new_features)
+        # 将farm_features转换为DataFrame
+        if farm_features:
+            # 使用列表推导式扁平化嵌套字典
+            flattened_features = [
+                {"pigfarm_dk": farm_id, "stats_dt": date, **feature_values}
+                for farm_id, date_dict in farm_features.items()
+                for date, feature_values in date_dict.items()
+            ]
+
+            # 转换为DataFrame
+            features_df = pd.DataFrame(flattened_features)
+            features_df.to_csv('features_df.csv', index=False, encoding='utf-8')
+
+            # stats_dt-1 用于模拟当天得不到数据的情况
+            features_df['stats_dt'] = pd.to_datetime(features_df['stats_dt'])
+            features_df['stats_dt'] = features_df['stats_dt'] + pd.Timedelta(days=1)
+
+            # 合并特征到index_data_copy
             index_data_copy = pd.merge(index_data_copy, features_df, on=['pigfarm_dk', 'stats_dt'], how='left')
-        
+
         logger.info("引种特征计算完成")
 
+
+        index_data_copy.to_csv('index_data_copy.csv', index=False, encoding='utf-8')
+
         return index_data_copy
+
+
+    
