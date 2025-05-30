@@ -7,7 +7,7 @@ DATA_DIR = ROOT_DIR / "data"
 MODELS_DIR = ROOT_DIR / "models"
 
 # --- 日期 ---
-TRAIN_RUNNING_DT = "2024-5-10" # 运行日期 (用于数据切分)
+TRAIN_RUNNING_DT = "2024-11-30" # 运行日期 (用于数据切分)
 TRAIN_INTERVAL = 100 # 训练数据的时间间隔 (单位：天)
 
 # --- 数据相关配置 ---
@@ -19,20 +19,14 @@ TRANSFORM_OFFSET = 1
 
 # --- 训练相关配置 ---
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-BATCH_SIZE = 128
-NUM_EPOCHS = 10
+BATCH_SIZE = 512
+NUM_EPOCHS = 200
 LEARNING_RATE = 0.001
 
 L2_REGULARIZATION = 1e-4 # L2 正则化系数
 
 # --- 模型相关配置 (LSTM 模型参数，先占位) ---
-INPUT_SIZE = None # 输入特征数量，后续会根据数据集动态设置
-SEQ_LENGTH = 7 # 输入序列长度
-HIDDEN_SIZE = 32 # LSTM 隐藏层大小
-NUM_LAYERS = 1 # LSTM 层数
-DROPOUT = 0.2 # LSTM dropout 概率
-OUTPUT_SIZE = 1 # 输出特征数量 (预测的目标变量数量)
-BIDIRECTIONAL = False # 是否使用双向 LSTM
+DROPOUT = 0.2
 
 EMBEDDING_SIZE = 128 # 嵌入层大小 (如果使用嵌入层)
 NUM_WORKERS = 0
@@ -44,8 +38,8 @@ RANDOM_SEED = 42 # 随机种子，保证结果可复现
 
 class main_predict:
 
-    PREDICT_RUNNING_DT = "2024-6-13" # 运行日期 (用于数据切分)
-    PREDICT_INTERVAL = 28 # 训练数据的时间间隔 (单位：天)
+    PREDICT_RUNNING_DT = "2025-1-21" # 运行日期 (用于数据切分)
+    PREDICT_INTERVAL = 50 # 训练数据的时间间隔 (单位：天)
 
 
     PREDICT_DATA_DIR = DATA_DIR / "predict"

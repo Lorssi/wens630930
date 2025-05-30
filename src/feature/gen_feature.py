@@ -118,7 +118,7 @@ class FeatureGenerator:
         计算死亡确认数据特征
         """
         death_confirm_data = DeathConfirmPreprocessor(index_data=index_data, running_dt=self.running_dt, interval_days=self.interval_days, death_confirm_data_path=DataPathConfig.DEATH_CONFIRM_DATA_PATH)
-        death_confirm_feature = death_confirm_data.calculate_intro_feature()
+        death_confirm_feature = death_confirm_data.calculate_death_confirm_feature()
         return death_confirm_feature
 
 

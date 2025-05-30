@@ -14,7 +14,7 @@ class DeathConfirmPreprocessor:
         self.start = self.running_dt - pd.Timedelta(days=interval_days) - pd.Timedelta(days=36)
         self.end = self.running_dt
 
-    def calculate_intro_feature(self):
+    def calculate_death_confirm_feature(self):
         """
         计算动态两周死淘率和动态五周死淘率特征
         """
@@ -27,6 +27,7 @@ class DeathConfirmPreprocessor:
         # 确保数据类型正确
         self.death_confirm_data['stats_dt'] = pd.to_datetime(self.death_confirm_data['stats_dt'])
         self.death_confirm_data['stats_dt'] = self.death_confirm_data['stats_dt'] + pd.Timedelta(days=1)  # 确保日期是正确的
+        
         self.death_confirm_data.rename(columns={'org_inv_dk': 'pigfarm_dk'}, inplace=True)
         
         # 筛选时间范围内的数据
