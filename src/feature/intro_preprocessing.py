@@ -6,11 +6,15 @@ from tqdm import tqdm
 logger = setup_logger(logger_config.TRAIN_LOG_FILE_PATH, logger_name="PreprocessingLogger")
 
 class IntroDataPreprocessor:
-    def __init__(self, intro_data_path, tame_data_path, index_data):
+    def __init__(self, intro_data_path, tame_data_path, index_data, running_dt=None, interval_days=None):
         self.intro_data_path = intro_data_path
         self.tame_data_path = tame_data_path
         self.index_data = index_data
         self.feature_columns = ['intro_source_num_90d', 'intro_source_is_single', 'intro_times_30d', 'intro_times_90d']
+        self.end_dt = pd.to_datetime(running_dt) - pd.Timedelta(days=1)
+        self.start_dt = pd.to_datetime(running_dt) - pd.Timedelta(days=interval_days)
+        self.extend_dt = self.start_dt - pd.Timedelta(days=91) # 扩展到90天前，用于计算90天内的引种特征
+
         self.load_data()
 
     def load_data(self):
@@ -22,6 +26,8 @@ class IntroDataPreprocessor:
             # 排除 boar_src_type 为 '选留' 的记录
             self.intro_data = self.intro_data[self.intro_data['boar_src_type'] != '选留']
             self.intro_data['intro_dt'] = pd.to_datetime(self.intro_data['intro_dt'])
+            # 过滤日期范围，减少数据大小
+            self.intro_data = self.intro_data[(self.intro_data['intro_dt'] >= self.extend_dt) & (self.intro_data['intro_dt'] <= self.end_dt)]
             # 排序，用于加快计算速度
             self.intro_data.sort_values(['org_inv_dk', 'intro_dt'], inplace=True)
         except Exception as e:
@@ -33,6 +39,8 @@ class IntroDataPreprocessor:
             self.tame_data = pd.read_csv(self.tame_data_path, encoding='utf-8', low_memory=False)
             self.tame_data.rename(columns={'tmp_ads_pig_isolation_tame_risk_l1_n2.org_inv_dk': 'org_inv_dk', 'tmp_ads_pig_isolation_tame_risk_l1_n2.bill_dt': 'bill_dt'}, inplace=True)
             self.tame_data['bill_dt'] = pd.to_datetime(self.tame_data['bill_dt'])
+            # 过滤日期范围，减少数据大小
+            self.tame_data = self.tame_data[(self.tame_data['bill_dt'] >= self.extend_dt) & (self.tame_data['bill_dt'] <= self.end_dt)]
             # 排序，用于加快计算速度
             self.tame_data.sort_values(['org_inv_dk', 'bill_dt'], inplace=True)
         except Exception as e:
@@ -48,19 +56,18 @@ class IntroDataPreprocessor:
             return self.index_data
             
         # 避免在原始数据上修改
-        result = self.index_data.copy()
+        index_data_copy = self.index_data.copy()
         
         logger.info("预处理数据计算特征...")
                 
-        # 获取所有需要计算特征的日期
-        all_dates = result['stats_dt'].unique()
-        min_date = result['stats_dt'].min()
-        max_date = result['stats_dt'].max()
-        
-        logger.info(f"创建所有猪场的特征映射表 ({min_date} 到 {max_date})...")
+ 
+        # 获取所有需要计算特征的日期（T+1模式）
+        all_stats_dates = sorted(index_data_copy['stats_dt'].unique())
+        # 获取需要计算的日期（T+1模式下是stats_dt日期的前一天）
+        all_calc_dates = [date - pd.Timedelta(days=1) for date in all_stats_dates]
         
         # 创建一个空DataFrame用于存储所有特征
-        farm_ids = result['pigfarm_dk'].unique()
+        farm_ids = index_data_copy['pigfarm_dk'].unique()
         
         # 初始化一个字典存储所有特征
         farm_features = {}
@@ -82,7 +89,7 @@ class IntroDataPreprocessor:
             farm_dict = {}
                 
             # 对每个日期计算特征 (只计算index_data中的日期)
-            for date in all_dates:
+            for date in all_calc_dates:
                 feature_dict = {
                     'intro_source_num_90d': 0,
                     'intro_source_is_single': 0, 
@@ -125,7 +132,7 @@ class IntroDataPreprocessor:
         
         # 将特征合并到结果DataFrame中，模拟T+1架构
         new_features = []
-        for _, row in tqdm(result.iterrows(), total=len(result), desc="合并特征"):
+        for _, row in tqdm(index_data_copy.iterrows(), total=len(index_data_copy), desc="合并特征"):
             farm_id = row['pigfarm_dk']
             stats_date = row['stats_dt']
             
@@ -140,16 +147,8 @@ class IntroDataPreprocessor:
         # 将特征转换为DataFrame并与结果合并
         if new_features:
             features_df = pd.DataFrame(new_features)
-            features_df['stats_dt'] = features_df['stats_dt'] + pd.Timedelta(days=1)  # 确保日期是T+1，用于模拟当天没有数据的情况
-            result = pd.merge(result, features_df, on=['pigfarm_dk', 'stats_dt'], how='left')
-        
-        # 填充缺失的特征值为0
-        for col in self.feature_columns:
-            if col in result.columns:
-                result[col] = result[col].fillna(0)
-            else:
-                result[col] = 0
+            index_data_copy = pd.merge(index_data_copy, features_df, on=['pigfarm_dk', 'stats_dt'], how='left')
         
         logger.info("引种特征计算完成")
 
-        return result
+        return index_data_copy

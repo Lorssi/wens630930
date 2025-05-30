@@ -44,7 +44,7 @@ class FeatureGenerator:
         # 加载数据
         intro_data = IntroDataPreprocessor(DataPathConfig.W01_AST_BOAR_PATH, 
                                            DataPathConfig.TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2, 
-                                           index_data=index_data)
+                                           index_data=index_data, running_dt=self.running_dt, interval_days=self.interval_days)
         if intro_data.intro_data is None:
             logger.error("数据加载失败，无法计算引种数据特征")
             return
@@ -134,7 +134,7 @@ class FeatureGenerator:
             return
         feature = self.abortion_data.copy()
         feature = self.dim_org_feature(feature)
-        # feature = self.intro_data_feature(self.feature)
+        # feature = self.intro_data_feature(feature)
         feature = self.season_feature(feature)
         feature = self.surrounding_feature(feature)
         feature = self.prrs_check_feature(feature)
