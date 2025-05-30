@@ -112,7 +112,9 @@ class FeatureGenerator:
         """
         计算生产数据特征
         """
-        pass
+        production_data = ProductionDataPreprocessor(data_path=DataPathConfig.path, index_data=index_data, running_dt=self.running_dt, interval_days=self.interval_days)
+        production_feature = production_data.calculate_production_feature()
+        return production_feature
 
     def death_confirm_feature(self, index_data=None):
         """
@@ -136,6 +138,7 @@ class FeatureGenerator:
         feature = self.season_feature(feature)
         feature = self.surrounding_feature(feature)
         feature = self.prrs_check_feature(feature)
+        # feature = self.production_feature(feature)
         feature = self.death_confirm_feature(feature)
 
         feature = feature[['stats_dt'] + ColumnsConfig.feature_columns]

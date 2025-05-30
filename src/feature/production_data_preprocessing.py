@@ -14,7 +14,7 @@ class ProductionDataPreprocessor:
         self.end_date = pd.to_datetime(running_dt) - pd.Timedelta(days=1)
         self.abortion_feature_columns = ['abortion_feature_1_7', 'abortion_mean_recent_7d', 'abortion_mean_recent_14d', 'abortion_mean_recent_21d']
         self.boar_feature_columns = ['boar_transin_times_30d', 'boar_transin_qty_30d', 'boar_transin_ratio_30d_1', 'boar_transin_ratio_30d_2']
-        self.preg_stock_feature_columns = ['preg_stock_sqty_change_ratio_7d', 'preg_stock_sqty_change_ratio_14d', 'preg_stock_sqty']
+        self.preg_stock_feature_columns = ['preg_stock_sqty_change_ratio_7d', 'preg_stock_sqty_change_ratio_15d', 'preg_stock_sqty']
         self.reserve_sow_feature_columns = ['reserve_sow_sqty', 'reserve_sow_sqty_change_ratio_7d', 'reserve_sow_sqty_change_ratio_15d']
         self.basesow_feature_columns = ['basesow_sqty', 'basesow_sqty_change_ratio_7d', 'basesow_sqty_change_ratio_15d']
         self.load_data()
@@ -35,13 +35,13 @@ class ProductionDataPreprocessor:
     
     def calculate_abortion_rate(self):
         # 确保流产数量和怀孕母猪存栏量是数值类型，并将NaN填充为0，因为它们参与计算
-        self.production_data['abort_qty_column'] = pd.to_numeric(self.production_data['abort_qty_column'], errors='coerce').fillna(0)
+        self.production_data['abort_qty'] = pd.to_numeric(self.production_data['abort_qty'], errors='coerce').fillna(0)
         self.production_data['preg_stock_qty'] = pd.to_numeric(self.production_data['preg_stock_qty'], errors='coerce').fillna(0)
         
         # 使用 groupby 和 rolling window 计算每个猪场每个日期的近7天流产总数
         # 'closed="left"' 通常用于rolling sum，但这里我们需要包含当天，所以默认'right'就可以
         # min_periods=1 表示即使不足7天，也会计算已有的天数和
-        self.production_data['recent_7day_abort_sum'] = self.production_data.groupby('pigfarm_dk')['abort_qty_column']\
+        self.production_data['recent_7day_abort_sum'] = self.production_data.groupby('pigfarm_dk')['abort_qty']\
                                                             .rolling(window=7, min_periods=7).sum()\
                                                             .reset_index(level=0, drop=True) # reset_index 去掉 groupby 带来的多级索引
 
