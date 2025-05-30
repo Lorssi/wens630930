@@ -16,7 +16,7 @@ class MLDataPreprocessor:
         
         self.index_end_date = pd.to_datetime(running_dt) - pd.Timedelta(days=1)  # 计算截止日期
         self.index_start_date = self.index_end_date - pd.Timedelta(days=interval_days)
-        self.ml_end_date = pd.to_datetime(running_dt) + pd.Timedelta(days=25)  # 计算截止日期
+        self.ml_end_date = pd.to_datetime(running_dt) - pd.Timedelta(days=1)  # 计算截止日期
         self.ml_start_date = pd.to_datetime(running_dt) - pd.Timedelta(days=interval_days) - pd.Timedelta(days=10)
 
         self.index_data = self.load_data(mode='index')

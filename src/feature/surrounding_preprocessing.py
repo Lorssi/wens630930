@@ -113,6 +113,9 @@ class SurroundingPreprocessing:
         
         # 合并所有结果
         rolling_avg_df = pd.concat(rolling_results, ignore_index=True)
+
+        l3_same_day_avg['stats_dt'] = l3_same_day_avg['stats_dt'] + pd.Timedelta(days=1)  # 模拟当天没有数据
+        rolling_avg_df['stats_dt'] = rolling_avg_df['stats_dt'] + pd.Timedelta(days=1)
         
         # 合并结果到原数据
         self.index_data = self.index_data.merge(

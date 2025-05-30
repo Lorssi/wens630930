@@ -293,7 +293,9 @@ class LabelGenerator:
     def has_risk_period_generate_multi_label_alter(self):
         """
         生成标签：如果未来7天内流产率超过0.0025，则标记为1，否则为0
-        优化版本 - 修复索引问题和数据处理
+        修改版本 - 移除完整窗口限制:
+        1. 对于完整窗口: 正常计算标签(1或0)
+        2. 对于不完整窗口: 如果观察到流产率>=0.0025则标记为1，否则为NaN
         """
         label = ColumnsConfig.HAS_RISK_LABEL
         periods = [(1,7),(8,14),(15,21)]
@@ -339,6 +341,9 @@ class LabelGenerator:
             farm_dates = farm_data_sorted[self.date_column].values
             farm_rates = farm_data_sorted['abortion_rate'].values
             
+            # 获取最大日期，用于判断窗口是否完整
+            max_date = farm_dates.max()
+            
             # 处理每个日期记录
             for i, (idx, row) in enumerate(farm_data_sorted.iterrows()):
                 current_date = row[self.date_column]
@@ -352,133 +357,56 @@ class LabelGenerator:
                     future_start = current_date + pd.Timedelta(days=left)
                     future_end = current_date + pd.Timedelta(days=right)
                     
-                    # 首先检查结束日期是否存在于数据中（确保窗口完整）
-                    end_date_exists = np.any(farm_dates == future_end)
+                    # 检查窗口是否完整(窗口终点是否在数据范围内)
+                    window_complete = future_end <= max_date
                     
                     # 使用向量化操作找出符合日期范围的记录
                     future_mask = (farm_dates >= future_start) & (farm_dates <= future_end)
                     future_rates = farm_rates[future_mask]
                     
-                    # 只有当结束日期存在且有足够的数据时才计算标签
-                    if end_date_exists and len(future_rates) > 0:
-                        # 计算风险标签
+                    # 检查窗口内是否有数据
+                    if len(future_rates) > 0:
+                        # 检查是否有流产率大于阈值
                         has_risk = np.any(future_rates >= 0.0025)
-                        self.calculate_data.loc[idx, pre_label] = 1 if has_risk else 0
                         
-                        # 计算风险天数
-                        risk_days = np.sum(future_rates >= 0.0025)
-                        self.calculate_data.loc[idx, days_label] = risk_days
-        
-        # 合并数据
-        merge_cols = [self.date_column, self.id_column] + risk_label_list + days_label_list
-        self.index_data = pd.merge(self.index_data, self.calculate_data[merge_cols], 
-                                   on=[self.date_column, self.id_column], how='left')
-        
-        # 其余代码保持不变...
-        self.calculate_data.to_csv(DataPathConfig.ABORTION_CALCULATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
-        self.index_data.to_csv(DataPathConfig.NON_DROP_NAN_LABEL_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
-        
-        self.index_data.dropna(subset=risk_label_list + days_label_list, inplace=True)  # 删除没有标签的记录
-
-        # 保存带标签的数据
-        if DataPathConfig.ABORTION_LABEL_DATA_SAVE_PATH:
-            self.index_data.to_csv(DataPathConfig.ABORTION_LABEL_DATA_SAVE_PATH, index=False, encoding='utf-8')
-            print(f"带标签的数据已保存至: {DataPathConfig.ABORTION_LABEL_DATA_SAVE_PATH}")
-
-        X = self.index_data.drop(columns=risk_label_list + days_label_list)
-        y = self.index_data[['stats_dt'] + risk_label_list + days_label_list]
-
-        return X, y
+                        if has_risk:
+                            # 如果检测到风险，则标记为1
+                            self.calculate_data.loc[idx, pre_label] = 1
+                            
+                            # days_label还按固定完整窗口来计算
+                            if window_complete:
+                                risk_days = np.sum(future_rates >= 0.0025)
+                                self.calculate_data.loc[idx, days_label] = risk_days
+                        elif window_complete:
+                            # 如果窗口完整且没有风险，则标记为0
+                            self.calculate_data.loc[idx, pre_label] = 0
+                            self.calculate_data.loc[idx, days_label] = 0
+                        # 如果窗口不完整且没有风险，保持为NaN
     
-    def days_period_generate_multi_task_alter(self):
-        """
-        生成标签：如果未来7天内流产率超过0.0025，则标记为1，否则为0
-        优化版本 - 修复索引问题和数据处理
-        """
-        label = ColumnsConfig.HAS_RISK_LABEL
-        periods = [(1,7),(8,14),(15,21)]
-        days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(period[0], period[1]) for period in periods]
-        risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(period[0], period[1]) for period in periods]
-
-        if self.calculate_data is None or len(self.calculate_data) == 0:
-            logger.info("Label计算数据为空，无法生成标签")
-            return None
-        if self.index_data is None or len(self.index_data) == 0:
-            logger.info("INDEX数据为空，无法生成标签")
-            return None
-        
-        # 确保日期列是datetime类型
-        self.calculate_data[self.date_column] = pd.to_datetime(self.calculate_data[self.date_column])
-        self.index_data[self.date_column] = pd.to_datetime(self.index_data[self.date_column])
-        
-        # 预初始化所有标签列
-        for period in periods:
-            left, right = period[0], period[1]
-            pre_label = ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right)
-            days_label = ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(left, right)
-            self.calculate_data[pre_label] = np.nan
-            self.calculate_data[days_label] = np.nan
-        
-        # 创建一个字典，存储每个猪场的数据，并保留原始索引
-        farm_dict = dict(tuple(self.calculate_data.groupby(self.id_column)))
-        total_count = len(self.calculate_data)
-        processed_count = 0
-        
-        print("开始处理标签数据...")
-        farm_count = 0
-        # 处理每个猪场的数据
-        for farm_id, farm_data in tqdm(farm_dict.items()):
-            farm_count += 1
-            # 创建猪场ID和日期到原始索引的映射
-            date_to_idx = {}
-            for idx, row in farm_data.iterrows():
-                date_to_idx[row[self.date_column]] = idx
-            
-            # 按日期排序，但保持原始索引的引用
-            farm_data_sorted = farm_data.sort_values(by=self.date_column)
-            farm_dates = farm_data_sorted[self.date_column].values
-            farm_rates = farm_data_sorted['abortion_rate'].values
-            
-            # 处理每个日期记录
-            for i, (idx, row) in enumerate(farm_data_sorted.iterrows()):
-                current_date = row[self.date_column]
-                
-                for period in periods:
-                    left, right = period[0], period[1]
-                    pre_label = ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right)
-                    days_label = ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(left, right)
-                    
-                    # 计算未来日期范围
-                    future_start = current_date + pd.Timedelta(days=left)
-                    future_end = current_date + pd.Timedelta(days=right)
-                    
-                    # 首先检查结束日期是否存在于数据中（确保窗口完整）
-                    end_date_exists = np.any(farm_dates == future_end)
-                    
-                    # 使用向量化操作找出符合日期范围的记录
-                    future_mask = (farm_dates >= future_start) & (farm_dates <= future_end)
-                    future_rates = farm_rates[future_mask]
-                    
-                    # 只有当结束日期存在且有足够的数据时才计算标签
-                    if end_date_exists and len(future_rates) > 0:
-                        # 计算风险标签
-                        has_risk = np.any(future_rates >= 0.0025)
-                        self.calculate_data.loc[idx, pre_label] = 1 if has_risk else 0
-                        
-                        # 计算风险天数
-                        risk_days = np.sum(future_rates >= 0.0025)
-                        self.calculate_data.loc[idx, days_label] = risk_days
-        
         # 合并数据
         merge_cols = [self.date_column, self.id_column] + risk_label_list + days_label_list
         self.index_data = pd.merge(self.index_data, self.calculate_data[merge_cols], 
                                    on=[self.date_column, self.id_column], how='left')
         
-        # 其余代码保持不变...
+        # 保存数据
         self.calculate_data.to_csv(DataPathConfig.ABORTION_CALCULATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
         self.index_data.to_csv(DataPathConfig.NON_DROP_NAN_LABEL_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
         
-        self.index_data.dropna(subset=risk_label_list + days_label_list, inplace=True)  # 删除没有标签的记录
+        # 统计标签信息
+        for period in periods:
+            left, right = period[0], period[1]
+            pre_label = ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right)
+            total = len(self.index_data)
+            nan_count = self.index_data[pre_label].isna().sum()
+            valid_count = total - nan_count
+            risk_count = (self.index_data[pre_label] == 1).sum()
+            
+            if valid_count > 0:
+                risk_pct = (risk_count / valid_count) * 100
+                logger.info(f"{left}-{right}天窗口: 共{total}条, 有效{valid_count}条, 风险{risk_count}条 ({risk_pct:.2f}%)")
+        
+        # 删除标签有为NaN的记录
+        self.index_data.dropna(subset=risk_label_list + days_label_list, how='any', inplace=True)
 
         # 保存带标签的数据
         if DataPathConfig.ABORTION_LABEL_DATA_SAVE_PATH:

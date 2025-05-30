@@ -63,10 +63,10 @@ def _collate_fn(batch):
         days_label_15_21_list.append(label[2]) # 15-21天标签
     
     # 转换为张量
-    features_tensor = torch.tensor(features_list, dtype=torch.float32)
-    days_1_7_tensor = torch.tensor(days_label_1_7_list, dtype=torch.long)    # 分类标签用long
-    days_8_14_tensor = torch.tensor(days_label_8_14_list, dtype=torch.long)
-    days_15_21_tensor = torch.tensor(days_label_15_21_list, dtype=torch.long)
+    features_tensor = torch.tensor(np.array(features_list), dtype=torch.float32)
+    days_1_7_tensor = torch.tensor(np.array(days_label_1_7_list), dtype=torch.long)    # 分类标签用long
+    days_8_14_tensor = torch.tensor(np.array(days_label_8_14_list), dtype=torch.long)
+    days_15_21_tensor = torch.tensor(np.array(days_label_15_21_list), dtype=torch.long)
     
     # 返回特征和所有标签
     return features_tensor, days_1_7_tensor, days_8_14_tensor, days_15_21_tensor
@@ -130,72 +130,6 @@ def split_data(data_transformed_masked_null, y):
     test_y = test_y[days_label_list]
 
     return train_X, test_X, train_y, test_y
-
-# 基于概率的随机采样计算
-def sample_probability(labels):
-    """
-    为不平衡的数据集创建加权随机采样器
-    
-    Args:
-        labels (np.ndarray): 标签数组，已经是numpy格式
-        
-    Returns:
-        WeightedRandomSampler: 基于类别权重的采样器
-    """
-    # 确保输入是numpy数组
-    if not isinstance(labels, np.ndarray):
-        labels = np.array(labels)
-    labels = labels.astype(int)  # 确保标签是整数类型
-
-    # 统计每个类别的样本数量
-    unique_classes = np.unique(labels)
-    class_sample_count = np.array([len(np.where(labels == t)[0]) for t in unique_classes])
-    
-    # 计算类别权重（样本量少的类别权重大）
-    weight = 1. / class_sample_count
-    
-    # 为每个样本分配权重
-    samples_weight = np.array([weight[np.where(unique_classes == t)[0][0]] for t in labels])
-    
-    # 转换为PyTorch张量
-    samples_weight = torch.from_numpy(samples_weight)
-    samples_weight = samples_weight.double()
-    
-    # 创建采样器
-    sampler = WeightedRandomSampler(
-        weights=samples_weight,
-        num_samples=len(samples_weight),
-        replacement=True
-    )
-    
-    return sampler
-
-# 平衡采样但不过度重采样
-def balanced_sampler(labels, max_ratio=3.0):
-    """
-    创建受限的平衡采样器，避免过度重采样
-    """
-    unique_classes, class_counts = np.unique(labels, return_counts=True)
-    max_count = np.max(class_counts)
-    min_count = np.min(class_counts)
-    
-    # 限制重采样倍率
-    if max_count / min_count > max_ratio:
-        target_counts = {cls: min(max_ratio * min_count, count) for cls, count in zip(unique_classes, class_counts)}
-    else:
-        target_counts = {cls: count for cls, count in zip(unique_classes, class_counts)}
-    
-    # 计算样本权重
-    weights = np.zeros_like(labels, dtype=float)
-    for cls in unique_classes:
-        idx = (labels == cls)
-        weights[idx] = target_counts[cls] / np.sum(idx)
-    
-    return WeightedRandomSampler(
-        weights=torch.from_numpy(weights).double(),
-        num_samples=len(weights),
-        replacement=True
-    )
 
 def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, device, early_stopping=None):
     logger.info("开始训练...")
@@ -410,7 +344,7 @@ if __name__ == "__main__":
         interval_days=config.TRAIN_INTERVAL
     )
     logger.info("开始生成标签...")
-    X, y = label_generator.days_period_generate_multi_task_alter()
+    X, y = label_generator.has_risk_period_generate_multi_label_alter()
     logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
     logger.info(f"X,y特征数据形状为：{X.shape}， 标签数据形状为：{y.shape}")
     

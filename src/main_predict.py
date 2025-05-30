@@ -68,11 +68,11 @@ def _collate_fn(batch):
         days_label_15_21_list.append(label[5]) # 15-21天标签
     
     # 转换为张量
-    features_tensor = torch.tensor(features_list, dtype=torch.float32)
-    multi_label_tensor = torch.tensor(multi_label_list, dtype=torch.float32)  # 多标签用float
-    days_1_7_tensor = torch.tensor(days_label_1_7_list, dtype=torch.long)    # 分类标签用long
-    days_8_14_tensor = torch.tensor(days_label_8_14_list, dtype=torch.long)
-    days_15_21_tensor = torch.tensor(days_label_15_21_list, dtype=torch.long)
+    features_tensor = torch.tensor(np.array(features_list), dtype=torch.float32)
+    multi_label_tensor = torch.tensor(np.array(multi_label_list), dtype=torch.float32)  # 多标签用float
+    days_1_7_tensor = torch.tensor(np.array(days_label_1_7_list), dtype=torch.long)    # 分类标签用long
+    days_8_14_tensor = torch.tensor(np.array(days_label_8_14_list), dtype=torch.long)
+    days_15_21_tensor = torch.tensor(np.array(days_label_15_21_list), dtype=torch.long)
     
     # 返回特征和所有标签
     return features_tensor, (multi_label_tensor, days_1_7_tensor, days_8_14_tensor, days_15_21_tensor)
