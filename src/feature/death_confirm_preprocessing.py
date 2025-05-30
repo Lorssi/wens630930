@@ -10,9 +10,8 @@ class DeathConfirmPreprocessor:
         self.index_data = index_data.copy()
         self.death_confirm_data = pd.read_csv(death_confirm_data_path, encoding='utf-8')
         
-        self.running_dt = pd.to_datetime(running_dt)
-        self.start = self.running_dt - pd.Timedelta(days=interval_days) - pd.Timedelta(days=36)
-        self.end = self.running_dt
+        self.end = pd.to_datetime(running_dt) - pd.Timedelta(days=1)
+        self.start = self.end - pd.Timedelta(days=interval_days) - pd.Timedelta(days=36)
 
     def calculate_death_confirm_feature(self):
         """

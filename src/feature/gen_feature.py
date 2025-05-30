@@ -131,7 +131,7 @@ class FeatureGenerator:
             return
         feature = self.abortion_data.copy()
         feature = self.dim_org_feature(feature)
-        # feature = self.intro_data_feature(self.feature)
+        feature = self.intro_data_feature(feature)
         feature = self.season_feature(feature)
         feature = self.surrounding_feature(feature)
         feature = self.prrs_check_feature(feature)

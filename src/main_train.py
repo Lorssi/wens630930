@@ -199,8 +199,6 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
             loss = criterion(outputs, multi_label_tensor)
             loss.backward()
 
-            # 添加梯度裁剪，设置最大范数为1.0
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             train_loss += loss.item()

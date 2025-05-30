@@ -11,11 +11,15 @@ class IntroDataPreprocessor:
         self.tame_data_path = tame_data_path
         self.index_data = index_data
         self.feature_columns = ['intro_source_num_90d', 'intro_source_is_single', 'intro_times_30d', 'intro_times_90d']
+        
+        self.intro_data = None
+        self.tame_data = None
         self.load_data()
 
     def load_data(self):
         # 加载引种数据
         try:
+            logger.info("加载引种数据...")
             self.intro_data = pd.read_csv(self.intro_data_path, encoding='utf-8')
             # 把来源猪场的空值由供应商名字填充
             self.intro_data['cffromhogp_nm'] = self.intro_data['cffromhogp_nm'].fillna(self.intro_data['vendor_nm'])
@@ -30,6 +34,7 @@ class IntroDataPreprocessor:
 
         # 加载入群数据
         try:
+            logger.info("加载驯化数据...")
             self.tame_data = pd.read_csv(self.tame_data_path, encoding='utf-8', low_memory=False)
             self.tame_data.rename(columns={'tmp_ads_pig_isolation_tame_risk_l1_n2.org_inv_dk': 'org_inv_dk', 'tmp_ads_pig_isolation_tame_risk_l1_n2.bill_dt': 'bill_dt'}, inplace=True)
             self.tame_data['bill_dt'] = pd.to_datetime(self.tame_data['bill_dt'])
@@ -145,10 +150,8 @@ class IntroDataPreprocessor:
         
         # 填充缺失的特征值为0
         for col in self.feature_columns:
-            if col in result.columns:
-                result[col] = result[col].fillna(0)
-            else:
-                result[col] = 0
+            if col not in result.columns:
+                result[col] = np.nan
         
         logger.info("引种特征计算完成")
 
