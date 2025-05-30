@@ -25,19 +25,19 @@ class AbortionAbnormalEvaluator:
             logger.info('----------------------------------------开始预警 执行测试流程----------------------------------------')
             logger.info(torch.cuda.is_available())
             # 参数初始化
-            predict_running_dt_end = self.task_param.get('predict_running_dt_end')
+            predict_running_dt = self.task_param.get('predict_running_dt')
             predict_interval = self.task_param.get('predict_interval')
             train_running_dt_end = self.task_param.get('train_running_dt_end')
             train_interval = self.task_param.get('train_interval')
 
             status_code=self.eval_generality(train_running_dt_end=train_running_dt_end,
                                              train_interval=train_interval,
-                                             predict_running_dt_end=predict_running_dt_end,
+                                             predict_running_dt=predict_running_dt,
                                              predict_interval=predict_interval)
             if status_code == "success":
-                logger.info("测试边界时间：{}运行成功！".format(predict_running_dt_end))
+                logger.info("测试边界时间：{}运行成功！".format(predict_running_dt))
             else:
-                logger.info("测试边界时间：{}运行失败！,异常：{}".format(predict_running_dt_end, status_code))
+                logger.info("测试边界时间：{}运行失败！,异常：{}".format(predict_running_dt, status_code))
 
             logger.info( '----------------------------------------预警测试 流程运行结束----------------------------------------')
 
@@ -46,7 +46,7 @@ class AbortionAbnormalEvaluator:
             logger.info(f"发生了一个错误: {e}", exc_info=True)
             # exit(1)
 
-    def eval_generality(self, train_running_dt_end=None, train_interval=None, predict_running_dt_end=None, predict_interval=None):
+    def eval_generality(self, train_running_dt_end=None, train_interval=None, predict_running_dt=None, predict_interval=None):
         try:
             logger.info('----------------------------------------测试流程预处理----------------------------------------')
             # todo 数据预处理模块
@@ -71,7 +71,7 @@ class AbortionAbnormalEvaluator:
             logger.info('----------------------------------------测试模型评估----------------------------------------')
             # todo 模型评估模块
             abortion_abnormal_eval = AbortionAbnormalEval1(logger=logger)
-            abortion_abnormal_eval.build_eval_set(eval_running_dt_end=predict_running_dt_end, eval_interval=predict_interval)
+            abortion_abnormal_eval.build_eval_set(eval_running_dt=predict_running_dt, eval_interval=predict_interval)
             abortion_abnormal_eval.eval_with_index_sample()
             logger.info( '----------------------------------------测试流程运行结束----------------------------------------')
             return "success"
@@ -86,13 +86,15 @@ if __name__ == "__main__":
     train_running_dt_end_list = ["2024-05-13", "2024-06-29", "2024-08-13", "2024-09-29", "2024-11-14", "2024-12-29", "2025-02-13", "2025-03-24"]
 
     parser = argparse.ArgumentParser(description='This is a simple command line tool.')
-    parser.add_argument('--predict_running_dt_end', default="2024-06-13", type=str, help='Input eval running dt end')
+    parser.add_argument('--predict_running_dt', default="2024-06-13", type=str, help='Input eval running dt end')
     parser.add_argument('--predict_interval', default=28, type=int, help='predict_interval')
     parser.add_argument('--train_running_dt_end', default="2024-05-13", type=str, help='Input train running dt end')
     args = parser.parse_args()
 
+    # & D:/data/anaconda3/envs/leb/python.exe d:/data/VSCode/wens630930/src/abortion_abnormal_evaluator.py --predict_running_dt '2024-11-30' --predict_interval 30
+
     task_param = {
-        'predict_running_dt_end': args.predict_running_dt_end,
+        'predict_running_dt': args.predict_running_dt,
         'predict_interval': args.predict_interval,
         'train_running_dt_end': args.train_running_dt_end,
     }
