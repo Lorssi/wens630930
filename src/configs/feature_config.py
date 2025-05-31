@@ -37,6 +37,7 @@ class DataPathConfig:
     DEATH_CONFIRM_DATA_PATH = RAW_DATA_DIR / "TMP_ORG_PRRS_OVERALL_ADOPT_CULL_DAY.csv"
 
     FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "feature_data.csv"
+    PREDICT_INDEX_MERGE_FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "predict_index_merge_feature_data.csv"
     TRAIN_TRANSFORMED_FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "train_transformed_feature_data.csv"
     VAL_TRANSFORMED_FEATURE_DATA_SAVE_PATH = INTERIM_DATA_DIR / "val_transformed_feature_data.csv"
 
@@ -60,6 +61,10 @@ class ColumnsConfig:
     MAIN_PREDICT_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abort_1_7', 'abort_8_14', 'abort_15_21', 'abort_1_7_pred', 'abort_8_14_pred', 'abort_15_21_pred',
                                 'abort_1_7_decision', 'abort_8_14_decision', 'abort_15_21_decision',
                                 'abort_1_7_threshold', 'abort_8_14_threshold', 'abort_15_21_threshold']
+    MAIN_PREDICT_TEST_WITH_INDEX_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abort_1_7_pred', 'abort_8_14_pred', 'abort_15_21_pred',
+                                'abort_1_7_decision', 'abort_8_14_decision', 'abort_15_21_decision',
+                                'abort_1_7_threshold', 'abort_8_14_threshold', 'abort_15_21_threshold']
+    
     DAYS_PREDICT_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'days_1_7', 'days_8_14', 'days_15_21', 'abort_day_1_7_pred', 'abort_day_8_14_pred', 'abort_day_15_21_pred',
                                 'days_1_7_decision', 'days_8_14_decision', 'days_15_21_decision',
                                 'days_1_7_threshold', 'days_8_14_threshold', 'days_15_21_threshold']

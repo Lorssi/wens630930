@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 from configs.logger_config import logger_config
 from configs.feature_config import ColumnsConfig, DataPathConfig
 import config
-from dataset.dataset import HasRiskDataset, MultiTaskAndMultiLabelDataset
+from dataset.dataset import HasRiskDataset, MultiTaskAndMultiLabelDataset, MultiTaskAndMultiLabelPredictDataset
 from utils.logger import setup_logger
 from utils.early_stopping import EarlyStopping
 from utils.save_csv import save_to_csv, read_csv
@@ -46,36 +46,16 @@ def _collate_fn(batch):
     # 初始化列表
     features_list = []
     
-    # 多标签任务（前三个标签）
-    multi_label_list = []
-    
-    # 多任务分类（后三个标签）
-    days_label_1_7_list = []
-    days_label_8_14_list = []
-    days_label_15_21_list = []
-    
-    for feature, label in batch:
+    for feature in batch:
         # 添加特征
         features_list.append(feature)
         
-        # 多标签任务（前三个）- 需要作为一个向量
-        multi_label = label[:3]  # 前三个标签
-        multi_label_list.append(multi_label)
-        
-        # 多任务分类（后三个）- 每个任务单独处理
-        days_label_1_7_list.append(label[3])  # 1-7天标签
-        days_label_8_14_list.append(label[4]) # 8-14天标签
-        days_label_15_21_list.append(label[5]) # 15-21天标签
     
     # 转换为张量
     features_tensor = torch.tensor(np.array(features_list), dtype=torch.float32)
-    multi_label_tensor = torch.tensor(np.array(multi_label_list), dtype=torch.float32)  # 多标签用float
-    days_1_7_tensor = torch.tensor(np.array(days_label_1_7_list), dtype=torch.long)    # 分类标签用long
-    days_8_14_tensor = torch.tensor(np.array(days_label_8_14_list), dtype=torch.long)
-    days_15_21_tensor = torch.tensor(np.array(days_label_15_21_list), dtype=torch.long)
     
     # 返回特征和所有标签
-    return features_tensor, (multi_label_tensor, days_1_7_tensor, days_8_14_tensor, days_15_21_tensor)
+    return features_tensor
 
     # 针对空值做处理
 def mask_feature_null(data = None, mode='train'):
@@ -133,7 +113,7 @@ def predict_model(model, predict_loader, device, predict_index):
     
     # 不计算梯度，提高效率
     with torch.no_grad():
-        for inputs, _ in tqdm(predict_loader, desc="预测进度"):
+        for inputs in tqdm(predict_loader, desc="预测进度"):
             # 将输入数据移动到指定设备
             inputs = inputs.to(device)
             
@@ -184,52 +164,55 @@ def predict_model(model, predict_loader, device, predict_index):
 
 if __name__ == "__main__":
     logger.info("开始数据加载和预处理...")
+    index_df = pd.read_csv(config.main_predict.PREDICT_INDEX_TABLE, encoding='utf-8-sig')
+    if index_df is None:
+        logger.error("索引数据加载失败，程序退出。")
+        exit()
+    logger.info(f"索引数据的列为：{index_df.columns}")
+    index_df['stats_dt'] = pd.to_datetime(index_df['stats_dt'], format='%Y-%m-%d', errors='coerce')
+
+    max_date = index_df['stats_dt'].max()
+    min_date = index_df['stats_dt'].min()
+    logger.info(f"索引数据的最小日期为：{min_date}, 最大日期为：{max_date}")
+    predict_running_dt = max_date + pd.Timedelta(days=1)  # 预测运行日期为最大日期的下一天
+    predict_interval = index_df['stats_dt'].nunique()  # 预测区间为索引数据的唯一日期数
+    logger.info(f"预测运行日期为：{predict_running_dt}, 预测区间为：{predict_interval}天")
+
     # 1. 加载和基础预处理数据
     # 生成特征
-    feature_generator = FeatureGenerator(running_dt=config.main_predict.PREDICT_RUNNING_DT, interval_days=config.main_predict.PREDICT_INTERVAL)
+    feature_generator = FeatureGenerator(running_dt=predict_running_dt, interval_days=predict_interval - 1)
     feature_df = feature_generator.generate_features()
+    # 索引拼接特征
+    index_merge_df = index_df.merge(feature_df, on=['stats_dt', 'pigfarm_dk'], how='left')
+    predict_index_label = index_df.copy()
+    index_merge_df = index_merge_df.reset_index(drop=True)
+    predict_index_label = predict_index_label.reset_index(drop=True)
 
-     # 生成lable
-    label_generator = LabelGenerator(
-        feature_data=feature_df,
-        running_dt=config.main_predict.PREDICT_RUNNING_DT,
-        interval_days=config.main_predict.PREDICT_INTERVAL,
+    index_merge_df.to_csv(
+        DataPathConfig.PREDICT_INDEX_MERGE_FEATURE_DATA_SAVE_PATH,
+        index=False,
+        encoding='utf-8-sig'
     )
-    logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_period_generate_multi_label_alter()
-    X.reset_index(drop=True, inplace=True)
-    y.reset_index(drop=True, inplace=True)
-    predict_index_label = pd.concat([X, y], axis=1)
-    logger.info(f"预测数据的索引为：{predict_index_label.columns}")
 
     # transform
-    if X is None:
+    if index_merge_df is None:
         logger.error("特征数据加载失败，程序退出。")
         exit()
 
+    index_merge_df = index_merge_df[ColumnsConfig.feature_columns]
     with open(config.TRANSFORMER_SAVE_PATH, "r+") as dump_file:
         transform = AbortionPredictionTransformPipeline.from_json(dump_file.read())
-    transformed_feature_df = transform.transform(input_dataset=X)
-
-    # 预测数据
-    periods = [(1, 7), (8, 14), (15, 21)]
-    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(left, right) for left, right in periods]
-    has_risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
+    transformed_feature_df = transform.transform(input_dataset=index_merge_df)
 
     predict_X = transformed_feature_df.copy()
-    predict_y = y.copy()
     predict_X = predict_X[ColumnsConfig.feature_columns]
-    predict_y = predict_y[has_risk_label_list + days_label_list]  # 只保留需要的标签列
 
     # 生成mask列
     transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
     transformed_masked_null_predict_X.fillna(0, inplace=True)  # 填充空值为0
     logger.info(f"data_transformed_masked_null数据字段为：{transformed_masked_null_predict_X.columns}")
     
-    predict_df = pd.concat([transformed_masked_null_predict_X, predict_y], axis=1)
-    predict_df = predict_df.reset_index(drop=True)
-    logger.info(f"预测数据的索引为：{predict_df.columns}")
-    predict_df.to_csv(
+    transformed_masked_null_predict_X.to_csv(
         DataPathConfig.PREDICT_DATA_TRANSFORMED_MASK_NULL_PREDICT_PATH,
         index=False,
         encoding='utf-8-sig'
@@ -244,7 +227,7 @@ if __name__ == "__main__":
     # logger.info("数据预处理完成.")
 
     # 5. 创建 PyTorch Dataset 和 DataLoader
-    predict_dataset = MultiTaskAndMultiLabelDataset(predict_df, label=has_risk_label_list + days_label_list)
+    predict_dataset = MultiTaskAndMultiLabelPredictDataset(transformed_masked_null_predict_X)
 
     predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
     logger.info("数据加载器准备完毕.")
@@ -252,7 +235,6 @@ if __name__ == "__main__":
     # --- 模型、损失函数、优化器 ---
     feature_dict = transform.features.features
     Categorical_feature = ColumnsConfig.DISCRETE_COLUMNS # 离散值字段
-    logger.info(f"pigfarm_dk类别数：{feature_dict[Categorical_feature[0]].category_encode.size}")
     params = {
         'model_discrete_columns': ColumnsConfig.MODEL_DISCRETE_COLUMNS,
         'model_continuous_columns': ColumnsConfig.MODEL_CONTINUOUS_COLUMNS,
@@ -268,7 +250,7 @@ if __name__ == "__main__":
 
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
     predict_df = predict_model(model, predict_loader, config.DEVICE, predict_index_label)
-    predict_df = predict_df[ColumnsConfig.MAIN_PREDICT_DATA_COLUMN]  # 只保留需要的列
+    predict_df = predict_df[ColumnsConfig.MAIN_PREDICT_TEST_WITH_INDEX_DATA_COLUMN]  # 只保留需要的列
     # 保存预测结果
     save_to_csv(df=predict_df, filepath=config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH)
     logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")
