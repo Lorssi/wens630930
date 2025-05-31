@@ -24,6 +24,8 @@ class AbortionAbnormalEval1(EvalBaseMixin):
     def __init__(self, logger=None):
         self.logger = logger
         self.result = pd.DataFrame()
+        self.eval_running_dt_start = None
+        self.eval_running_dt_end = None
 
     # 构建评测数据集
     def build_eval_set(self, eval_running_dt, eval_interval, param=None):
@@ -38,12 +40,20 @@ class AbortionAbnormalEval1(EvalBaseMixin):
         )
 
         # todo 获取预测值
-        self.predict_data = pd.read_csv("data/predict/has_risk_predict_result.csv", encoding='utf-8')
+        # if self.eval_running_dt_start == '2024-03-01':
+        #     predict_name = "3"
+        # elif self.eval_running_dt_start == '2024-06-01':
+        #     predict_name = "6"
+        # elif self.eval_running_dt_start == '2024-09-01':
+        #     predict_name = "9"
+        # elif self.eval_running_dt_start == '2024-12-01':
+        #     predict_name = "12"
+        # else:
+        #     assert False, f"未知的评估时间点：{self.eval_running_dt_start}"
+        predict_name = "CLIP_6"
+        self.predict_data = pd.read_csv(f"data/predict/has_risk_predict_result_{predict_name}.csv", encoding='utf-8')
         # todo 转化日期格式
         self.predict_data['stats_dt'] = pd.to_datetime(self.predict_data['stats_dt'])
-
-        # todo 
-        self.predict_data = self.predict_data.drop(columns=['abort_1_7', 'abort_8_14', 'abort_15_21'])
 
         # 获取组织分类表
         dim_org_inv = pd.read_csv("data/raw_data/dim_org_inv.csv", encoding='utf-8')
@@ -78,14 +88,19 @@ class AbortionAbnormalEval1(EvalBaseMixin):
         special_samples_result = eval_dt.eval_special_samples()
         l2_results, l3_results, l4_results = eval_dt.eval_organizational_hierarchy()
 
+        abortion_duration_results = eval_dt.calculate_abortion_duration()
+        abortion_interval_results = eval_dt.calculate_abortion_interval()
+
         if save_flag:
-            with pd.ExcelWriter(f"data/eval/abortion_abnormal_eval_{self.eval_running_dt_end}.xlsx") as writer:
+            with pd.ExcelWriter(f"data/eval/abortion_abnormal_eval_{self.eval_running_dt_start}_CLIP_6.xlsx") as writer:
                 all_sample_result.to_excel(writer, sheet_name='整体', index=False)
                 all_sample_result_exclude_feiwen.to_excel(writer, sheet_name='整体-剔除非瘟数据', index=False)
                 special_samples_result.to_excel(writer, sheet_name='特殊样本分析', index=False)
                 l2_results.to_excel(writer, sheet_name='二级组织分类', index=False)
                 l3_results.to_excel(writer, sheet_name='三级组织分类', index=False)
                 l4_results.to_excel(writer, sheet_name='四级组织分类', index=False)
+                abortion_duration_results.to_excel(writer, sheet_name='流产持续时长分析', index=False)
+                abortion_interval_results.to_excel(writer, sheet_name='流产间隔分析', index=False)
 
 
 # 任务2评估
