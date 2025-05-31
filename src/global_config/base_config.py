@@ -9,7 +9,7 @@ class ModulePath(Enum):
     # 特征模块
     feature_dataset_list = [
         {'dataset_name': 'feature_alter.train_index_dataset',
-         'main_class_name': 'TrainIndexDataSet',  # xx.py
+         'main_class_name': 'TrainIndexDataset',  # xx.py
          'file_type': 'csv',
          'params': {}},
     ]

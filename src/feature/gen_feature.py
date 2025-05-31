@@ -32,8 +32,8 @@ class FeatureGenerator:
 
         # 计算流产率
         ml_data.calculate_abortion_rate()
-        ml_data.clean_data()
-        ml_data.clean_ml_data()
+        # ml_data.clean_data()
+        # ml_data.clean_ml_data()
     
         return ml_data.index_data
     
@@ -136,7 +136,7 @@ class FeatureGenerator:
         feature = self.dim_org_feature(feature)
         # feature = self.intro_data_feature(feature)
         feature = self.season_feature(feature)
-        feature = self.surrounding_feature(feature)
+        # feature = self.surrounding_feature(feature)
         feature = self.prrs_check_feature(feature)
         # feature = self.production_feature(feature)
         feature = self.death_confirm_feature(feature)

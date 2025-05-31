@@ -31,6 +31,7 @@ from model.mlp import Has_Risk_MLP
 from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel
 from model.multi_task_nfm import Multi_Task_NFM
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
+from module.future_generate_main import FeatureGenerateMain
 
 # 设置浮点数显示为小数点后2位，抑制科学计数法
 # np.set_printoptions(precision=2, suppress=True)
@@ -313,6 +314,12 @@ def eval(model, val_loader, criterion, device):
 
 if __name__ == "__main__":
     logger.info("开始数据加载和预处理...")
+    feature_gen_main = FeatureGenerateMain(
+        running_dt=config.TRAIN_RUNNING_DT,
+        origin_feature_precompute_interval=config.TRAIN_INTERVAL,
+        logger=logger
+    )
+    feature_gen_main.generate_feature()  # 生成特征
     # 1. 加载和基础预处理数据
     # 生成特征
     feature_generator = FeatureGenerator(running_dt=config.TRAIN_RUNNING_DT, interval_days=config.TRAIN_INTERVAL)
@@ -333,27 +340,6 @@ if __name__ == "__main__":
     if X is None:
         logger.error("特征数据加载失败，程序退出。")
         exit()
-    # transformer = FeatureTransformer(
-    #     discrete_cols=ColumnsConfig.DISCRETE_COLUMNS,
-    #     continuous_cols=ColumnsConfig.CONTINUOUS_COLUMNS,
-    #     invariant_cols=ColumnsConfig.INVARIANT_COLUMNS,
-    #     model_discrete_cols=ColumnsConfig.MODEL_DISCRETE_COLUMNS,
-    #     offset=config.TRANSFORM_OFFSET,
-    # )
-
-    # transformed_feature_df = transformer.fit_transform(X.copy())
-    # transformed_feature_df.to_csv(
-    #     DataPathConfig.TRANSFORMED_FEATURE_DATA_SAVE_PATH,
-    #     index=False,
-    #     encoding='utf-8-sig'
-    # )
-    # logger.info(f"trainsformed_feature_df数据字段为：{transformed_feature_df.columns}")
-    # transform_dict = transformer.params
-    # logger.info(f"pigfarmdk类别数为：{len(transform_dict['discrete_mappings']['pigfarm_dk']['key2id'])}")
-    # 保存离散特征类别数用于embedding
-    # discrete_class_num = transformer.discrete_column_class_count(transformed_feature_df)
-    # logger.info(f"离散特征的类别数量: {discrete_class_num}")
-    # transformer.save_params(filepath=config.TRANSFORMER_SAVE_PATH)
 
     train_X, val_X, train_y, val_y = split_data(X, y)
     # 重建索引，不然后面tranform会重建索引导致X与y在concat时不匹配
