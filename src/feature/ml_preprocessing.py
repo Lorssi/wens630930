@@ -112,6 +112,8 @@ class MLDataPreprocessor:
 
         # 应用计算函数
         self.ml_data[new_column_name] = self.ml_data.apply(calculate_rate, axis=1)
+        self.ml_data = self.ml_data[ColumnsConfig.INDEX_DATA_COLUMN]
+        self.ml_data.to_csv("ml_abortion.csv", index=False, encoding='utf-8-sig')
 
         abortion_feature = self.ml_data[[self.date_column, self.id_column, new_column_name]].copy()
         abortion_feature.rename(columns={new_column_name: 'abortion_rate_1_7'}, inplace=True)
@@ -120,7 +122,12 @@ class MLDataPreprocessor:
 
         self.index_data = pd.merge(self.index_data, self.ml_data[[self.date_column, self.id_column, new_column_name]],
                                    on=[self.date_column, self.id_column], how='left')
+        self.index_data = self.index_data[ColumnsConfig.INDEX_DATA_COLUMN]
+        self.index_data.to_csv("index_with_abortion.csv", index=False, encoding='utf-8-sig')
         self.index_data = pd.merge(self.index_data, abortion_feature, on=[self.date_column, self.id_column], how='left')
+        self.index_data.to_csv("index_with_abortion_with_abortion_feature.csv", index=False, encoding='utf-8-sig')
+
+
         # 可以选择删除中间列
         # self.ml_data.drop(columns=['recent_7day_abort_sum'], inplace=True)
 
@@ -162,9 +169,6 @@ class MLDataPreprocessor:
         logger.info(f"数据清理完成：删除了{removed_farms}个流产率全为空的猪场，共{removed_records}条记录")
         logger.info(f"清理后数据：{after_count}条记录，{after_farm_count}个猪场")
 
-        self.index_data.to_csv(DataPathConfig.INDEX_ABORTION_RATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
-        logger.info(f"INDEX流产率数据已保存至 {DataPathConfig.INDEX_ABORTION_RATE_DATA_SAVE_PATH}")
-
     def clean_ml_data(self):
         """
         删除流产率全为空的猪场数据
@@ -200,6 +204,3 @@ class MLDataPreprocessor:
         
         logger.info(f"数据清理完成：删除了{removed_farms}个流产率全为空的猪场，共{removed_records}条记录")
         logger.info(f"清理后数据：{after_count}条记录，{after_farm_count}个猪场")
-
-        self.ml_data.to_csv(DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
-        logger.info(f"ML流产率计算完成，数据已保存至 {DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH}")

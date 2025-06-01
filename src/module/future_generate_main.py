@@ -3,7 +3,7 @@ import importlib
 import logging
 import os
 import sys
-from global_config.base_config import ModulePath
+from configs.base_config import ModulePath
 
 
 

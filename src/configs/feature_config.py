@@ -57,7 +57,7 @@ class DataPathConfig:
         return path
 
 class ColumnsConfig:
-    INDEX_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'city', 'abortion_rate']
+    INDEX_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abortion_rate']
     MAIN_PREDICT_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abort_1_7', 'abort_8_14', 'abort_15_21', 'abort_1_7_pred', 'abort_8_14_pred', 'abort_15_21_pred',
                                 'abort_1_7_decision', 'abort_8_14_decision', 'abort_15_21_decision',
                                 'abort_1_7_threshold', 'abort_8_14_threshold', 'abort_15_21_threshold']

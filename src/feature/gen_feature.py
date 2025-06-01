@@ -32,8 +32,20 @@ class FeatureGenerator:
 
         # 计算流产率
         ml_data.calculate_abortion_rate()
-        # ml_data.clean_data()
-        # ml_data.clean_ml_data()
+
+        ml_data.clean_data()
+        if ml_data.index_data is None:
+            logger.error("流产率计算失败")
+        else:
+            ml_data.index_data.to_csv(DataPathConfig.INDEX_ABORTION_RATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
+            logger.info(f"INDEX流产率数据已保存至 {DataPathConfig.INDEX_ABORTION_RATE_DATA_SAVE_PATH}")
+
+        ml_data.clean_ml_data()
+        if ml_data.ml_data is None:
+            logger.error("流产率计算失败")
+        else:
+            ml_data.ml_data.to_csv(DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH, index=False, encoding='utf-8-sig')
+            logger.info(f"流产率特征计算完成, 数据已保存至 {DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH}, 长度: {len(ml_data.ml_data)}")
     
         return ml_data.index_data
     
