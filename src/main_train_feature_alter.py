@@ -21,6 +21,8 @@ from configs.logger_config import logger_config
 from configs.feature_config import ColumnsConfig, DataPathConfig
 import config
 from dataset.dataset import HasRiskDataset, MultiTaskAndMultiLabelDataset
+from dataset.risk_prediction_index_sample_dataset import RiskPredictionIndexSampleDataset
+from dataset.risk_prediction_feature_dataset import RiskPredictionFeatureDataset
 from utils.logger import setup_logger
 from utils.early_stopping import EarlyStopping
 from utils.save_csv import save_to_csv, read_csv
@@ -313,21 +315,29 @@ def eval(model, val_loader, criterion, device):
     return avg_val_loss, metrics
 
 if __name__ == "__main__":
-    # logger.info("开始数据加载和预处理...")
-    # feature_gen_main = FeatureGenerateMain(
-    #     running_dt=config.TRAIN_RUNNING_DT,
-    #     origin_feature_precompute_interval=config.TRAIN_INTERVAL,
-    #     logger=logger
-    # )
-    # feature_gen_main.generate_feature()  # 生成特征
+    logger.info("开始数据加载和预处理...")
+    feature_gen_main = FeatureGenerateMain(
+        running_dt=config.TRAIN_RUNNING_DT,
+        origin_feature_precompute_interval=config.TRAIN_INTERVAL,
+        logger=logger
+    )
+    feature_gen_main.generate_feature()  # 生成特征
+
+    index_sample_obj = RiskPredictionIndexSampleDataset()
+    connect_feature_obj = RiskPredictionFeatureDataset()
+    logger.info('----------Create index sample---------')
+    train_index_data = index_sample_obj.build_train_dataset(config.TRAIN_RUNNING_DT, config.TRAIN_INTERVAL)
+    logger.info("----------Generating train dataset----------")
+    train_connect_feature_data = connect_feature_obj.build_train_dataset(input_dataset=train_index_data.copy(), param=None)
+
     # 1. 加载和基础预处理数据
     # 生成特征
-    feature_generator = FeatureGenerator(running_dt=config.TRAIN_RUNNING_DT, interval_days=config.TRAIN_INTERVAL)
-    feature_df = feature_generator.generate_features()
+    # feature_generator = FeatureGenerator(running_dt=config.TRAIN_RUNNING_DT, interval_days=config.TRAIN_INTERVAL)
+    # feature_df = feature_generator.generate_features()
 
     # 生成lable
     label_generator = LabelGenerator(
-        feature_data=feature_df,
+        feature_data=train_connect_feature_data,
         running_dt=config.TRAIN_RUNNING_DT,
         interval_days=config.TRAIN_INTERVAL
     )

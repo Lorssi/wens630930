@@ -1,6 +1,7 @@
 import pandas as pd
 from configs.feature_config import DataPathConfig,ColumnsConfig
 from configs.logger_config import logger_config
+from configs.base_config import FeatureData
 from tqdm import tqdm
 import numpy as np
 
@@ -22,10 +23,11 @@ class LabelGenerator:
     def load_data(self):
         """加载数据"""
         try:
-            df = pd.read_csv(DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH, encoding='utf-8')
-            logger.info(f"成功加载数据: {DataPathConfig.ML_AOBRTION_RATE_DATA_SAVE_PATH}")
+            df = pd.read_csv(FeatureData.PRODUCTION_FEATURE_DATA.value, encoding='utf-8')
+            logger.info(f"成功加载数据: {FeatureData.PRODUCTION_FEATURE_DATA.value}, 数据行数: {len(df)}")
 
             df[self.date_column] = pd.to_datetime(df[self.date_column])  # 转换为 datetime 格式
+            df = df.dropna(subset=['abortion_rate'])  # 删除缺失值行
 
             # 处理数据
             if df is not None:
@@ -297,7 +299,6 @@ class LabelGenerator:
         1. 对于完整窗口: 正常计算标签(1或0)
         2. 对于不完整窗口: 如果观察到流产率>=0.0025则标记为1，否则为NaN
         """
-        label = ColumnsConfig.HAS_RISK_LABEL
         periods = [(1,7),(8,14),(15,21)]
         days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(period[0], period[1]) for period in periods]
         risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(period[0], period[1]) for period in periods]
