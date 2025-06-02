@@ -30,6 +30,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         self.death_confirm_feature_data = pd.read_csv(base_config.FeatureData.DEATH_CONFIRM_FEATURE_DATA.value)
         self.org_feature_data = pd.read_csv(base_config.FeatureData.ORG_FEATURE_DATA.value)
         self.date_feature_data = pd.read_csv(base_config.FeatureData.DATE_FEATURE_DATA.value)
+        self.intro_feature_data = pd.read_csv(base_config.FeatureData.INTRO_FEATURE_DATA.value)
 
         self.file_name = None  # 文件名
         self.index_data = pd.DataFrame()  # 索引数据
@@ -170,6 +171,32 @@ class RiskPredictionFeatureDataset(BaseDataSet):
 
         self.index_data = index_data.copy()
 
+    def _get_intro_feature(self):
+        """
+        使用merge和向量化操作获取mean_prop特征，避免逐行处理
+        """
+        logger.info("获取intro特征...")
+        intro_feature = ['intro_source_num_90d', 'intro_source_is_single', 'intro_times_30d', 'intro_times_90d', 'intro_days_30d', 'intro_days_90d']
+
+        # 复制数据并确保类型正确
+        index_data = self.index_data.copy()
+        intro_feature_data = self.intro_feature_data.copy()
+
+       # 转换日期类型和其他数据类型
+        index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        intro_feature_data['stats_dt'] = pd.to_datetime(intro_feature_data['stats_dt'])
+        index_data['pigfarm_dk'] = index_data['pigfarm_dk'].astype(str)
+
+        intro_feature_data['stats_dt'] = intro_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
+        index_data = pd.merge(
+            index_data,
+            intro_feature_data[['stats_dt', 'pigfarm_dk'] + intro_feature],
+            on=['stats_dt', 'pigfarm_dk'],
+            how='left'
+        )
+
+        self.index_data = index_data.copy()
+
     def _post_processing_train_data(self):
         index_data = self.index_data.copy()
         production_feature_data = self.production_feature_data.copy()
@@ -218,6 +245,8 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         self._get_check_feature()
         logger.info("-----Connecting feature: correct_status_nm fea")
         self._get_death_confirm_feature()
+        logger.info("-----Connecting feature: intro_data")
+        self._get_intro_feature()
         logger.info("-----Postprocessing Data-----")
         self._post_processing_train_data()
         self.dump_dataset(risk_config.algo_interim_dir / self.file_name)

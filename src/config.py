@@ -7,7 +7,7 @@ DATA_DIR = ROOT_DIR / "data"
 MODELS_DIR = ROOT_DIR / "models"
 
 # --- 日期 ---
-TRAIN_RUNNING_DT = "2024-6-1" # 运行日期 (用于数据切分)
+TRAIN_RUNNING_DT = "2024-12-1" # 运行日期 (用于数据切分)
 TRAIN_INTERVAL = 100 # 训练数据的时间间隔 (单位：天)
 
 # --- 数据相关配置 ---
@@ -20,7 +20,7 @@ TRANSFORM_OFFSET = 1
 # --- 训练相关配置 ---
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 BATCH_SIZE =512
-NUM_EPOCHS = 10
+NUM_EPOCHS = 200
 LEARNING_RATE = 0.001
 
 L2_REGULARIZATION = 1e-4 # L2 正则化系数
@@ -44,8 +44,8 @@ class main_predict:
 
     PREDICT_DATA_DIR = DATA_DIR / "predict"
 
-    HAS_RISK_PREDICT_RESULT_SAVE_PATH = PREDICT_DATA_DIR / "has_risk_predict_result.csv"
-    DAYS_PREDICT_RESULT_SAVE_PATH = PREDICT_DATA_DIR / "days_predict_result.csv"
+    HAS_RISK_PREDICT_RESULT_SAVE_PATH = PREDICT_DATA_DIR / "abort_abnormal.csv"
+    DAYS_PREDICT_RESULT_SAVE_PATH = PREDICT_DATA_DIR / "abort_abnormal_day.csv"
 
-    PREDICT_INDEX_TABLE = PREDICT_DATA_DIR / "index_sample_20240601.csv"
+    PREDICT_INDEX_TABLE = PREDICT_DATA_DIR / "index_sample_20241201.csv"
 

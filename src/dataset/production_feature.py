@@ -41,7 +41,7 @@ class ProductionFeature(BaseFeatureDataSet):
         self.file_type = file_type
 
         self.end_date = (datetime.strptime(self.running_dt_end, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-        self.start_date = (datetime.strptime(self.end_date, "%Y-%m-%d") - timedelta(days=self.train_interval) - timedelta(days=10)).strftime("%Y-%m-%d")
+        self.start_date = (datetime.strptime(self.end_date, "%Y-%m-%d") - timedelta(days=self.train_interval) - timedelta(days=40)).strftime("%Y-%m-%d")
         logger.info('-----start_date: {}'.format(self.start_date))
         logger.info('-----end_date: {}'.format(self.end_date))
 
@@ -51,7 +51,7 @@ class ProductionFeature(BaseFeatureDataSet):
         self._init_entity_and_features()
 
     def _preprocessing_data(self):
-        production_data = self.production_data[self.entity + ['abort_qty', 'preg_stock_qty']].copy()
+        production_data = self.production_data.copy()
 
         production_data['stats_dt'] = pd.to_datetime(production_data['stats_dt'])
         production_data = production_data[
@@ -137,6 +137,50 @@ class ProductionFeature(BaseFeatureDataSet):
         production_data[feature_name] = production_data.apply(calculate_rate, axis=1)
 
         self.data = production_data.copy()
+
+    def _get_abortion_mean_feature(self):
+        """
+        计算流产率特征:
+        1. abortion_feature_1_7: 流产率
+        2. abortion_mean_recent_7d: 近7天流产率均值
+        3. abortion_mean_recent_14d: 近14天流产率均值
+        4. abortion_mean_recent_21d: 近21天流产率均值
+        """
+        data = self.data.copy()
+
+        data['abortion_mean_recent_7d'] = data.groupby('pigfarm_dk')['abortion_rate']\
+            .rolling(window=7, min_periods=7).mean()\
+            .reset_index(level=0, drop=True)
+        data['abortion_mean_recent_14d'] = data.groupby('pigfarm_dk')['abortion_rate']\
+            .rolling(window=14, min_periods=14).mean()\
+            .reset_index(level=0, drop=True)
+        data['abortion_mean_recent_21d'] = data.groupby('pigfarm_dk')['abortion_rate']\
+            .rolling(window=21, min_periods=21).mean()\
+            .reset_index(level=0, drop=True)
+
+        self.data = data.copy()
+
+    def _get_abortion_mean_feature(self):
+        """
+        计算流产率特征:
+        1. abortion_feature_1_7: 流产率
+        2. abortion_mean_recent_7d: 近7天流产率均值
+        3. abortion_mean_recent_14d: 近14天流产率均值
+        4. abortion_mean_recent_21d: 近21天流产率均值
+        """
+        data = self.data.copy()
+
+        data['abortion_mean_recent_7d'] = data.groupby('pigfarm_dk')['abortion_rate']\
+            .rolling(window=7, min_periods=7).mean()\
+            .reset_index(level=0, drop=True)
+        data['abortion_mean_recent_14d'] = data.groupby('pigfarm_dk')['abortion_rate']\
+            .rolling(window=14, min_periods=14).mean()\
+            .reset_index(level=0, drop=True)
+        data['abortion_mean_recent_21d'] = data.groupby('pigfarm_dk')['abortion_rate']\
+            .rolling(window=21, min_periods=21).mean()\
+            .reset_index(level=0, drop=True)
+
+        self.data = data.copy()
 
     def _post_processing_data(self):
         if self.data.isnull().any().any():

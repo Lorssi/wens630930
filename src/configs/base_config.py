@@ -66,10 +66,15 @@ class ModulePath(Enum):
          'file_type': 'csv',
          'main_class_name': 'PrrsCheckFeature',
          'params': {}},
-         # 死淘特征
+        # 死淘特征
         {'dataset_name': 'dataset.death_confirm_feature',
          'file_type': 'csv',
          'main_class_name': 'DeathConfirmFeature',
+         'params': {}},
+        # 引种特征
+        {'dataset_name': 'dataset.intro_feature',
+         'file_type': 'csv',
+         'main_class_name': 'IntroFeature',
          'params': {}},
     ]
     # 训练模块

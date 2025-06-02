@@ -71,12 +71,12 @@ class ColumnsConfig:
 
     # TRANSFORM_FIT
     DISCRETE_COLUMNS = ['pigfarm_dk','city']
-    CONTINUOUS_COLUMNS = ['abortion_rate_1_7','check_out_ratio_7d', 'death_confirm_2_week']
+    CONTINUOUS_COLUMNS = ['abortion_rate_1_7','check_out_ratio_7d', 'death_confirm_2_week', 'intro_source_num_90d']
     INVARIANT_COLUMNS = ['season']
 
     # MODEL_FIT
     MODEL_DISCRETE_COLUMNS = ['pigfarm_dk','city','season']
-    MODEL_CONTINUOUS_COLUMNS = ['abortion_rate_1_7', 'check_out_ratio_7d', 'death_confirm_2_week']
+    MODEL_CONTINUOUS_COLUMNS = ['abortion_rate_1_7', 'check_out_ratio_7d', 'death_confirm_2_week', 'intro_source_num_90d']
     MODEL_DIRECT_COLUMNS = []
 
     # COLUMNS

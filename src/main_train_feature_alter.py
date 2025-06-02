@@ -435,7 +435,7 @@ if __name__ == "__main__":
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
         'city': feature_dict[Categorical_feature[1]].category_encode.size,
-        'season': 4
+        'season': 4,
     }
     model = Has_Risk_NFM_MultiLabel(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
