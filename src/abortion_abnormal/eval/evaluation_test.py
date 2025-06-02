@@ -1,13 +1,11 @@
 import pandas as pd
-from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score, classification_report
 from sklearn.exceptions import UndefinedMetricWarning
 from tqdm import tqdm
 import warnings
 
 
-
-
-class EvalData():
+class AbortionAbnormalPredictEvalData():
 
     def __init__(self, predict_result, sample_ground_truth, eval_running_dt_start, eval_running_dt_end, logger=None):
         """
@@ -28,7 +26,9 @@ class EvalData():
         )
 
         self.eval_running_dt_start = pd.to_datetime(eval_running_dt_start)
+        self.eval_running_dt_start_string = self.eval_running_dt_start.strftime('%Y-%m-%d')
         self.eval_running_dt_end = pd.to_datetime(eval_running_dt_end)
+        self.eval_running_dt_end_string = self.eval_running_dt_end.strftime('%Y-%m-%d')
         self.logger = logger
         self.feiwen_dict = None
 
@@ -106,7 +106,7 @@ class EvalData():
         return filtered_sample
 
 
-    def get_special_sample1(self, sorted_data, i, period):
+    def get_special_sample(self, data, period, prev_status, next_status):
         """
         获取特殊样本
         :param period: 预测周期，'1_7', '8_14', '15_21'
@@ -114,44 +114,71 @@ class EvalData():
         :param next_status: 后一天的状态，0或1
         :return: 特殊样本 DataFrame
         """
-        # 获取时间点t
-        t = sorted_data.iloc[i]['stats_dt']
-        
-        # 找出t-1到t+2的所有样本
-        farm_data = sorted_data.copy()
-        t_minus_1 = t - pd.Timedelta(days=1)
-        t_plus_1 = t + pd.Timedelta(days=1)
-        t_plus_2 = t + pd.Timedelta(days=2)
-        
-        # 筛选时间范围内的样本
-        time_range_samples = farm_data[(farm_data['stats_dt'] >= t_minus_1) & 
-                                        (farm_data['stats_dt'] <= t_plus_2)]
-        
-        # 判断是否符合连续性，即两天的样本是相同的
-        t_minus_1_sample = time_range_samples[time_range_samples['stats_dt'] == t_minus_1]
-        t_sample = time_range_samples[time_range_samples['stats_dt'] == t]
-        t_plus_1_sample = time_range_samples[time_range_samples['stats_dt'] == t_plus_1]
-        t_plus_2_sample = time_range_samples[time_range_samples['stats_dt'] == t_plus_2]
-        
-        # 检查是否存在这两天的样本
-        if not t_minus_1_sample.empty and not t_sample.empty:
-            # 获取 abort_{period} 值
-            t_minus_1_abort = t_minus_1_sample.iloc[0][f'abort_{period}']
-            t_abort = t_sample.iloc[0][f'abort_{period}']
-            
-            # 如果两天的 abort_{period} 值不同，删除 t_minus_1 的数据
-            if t_minus_1_abort != t_abort:
-                time_range_samples = time_range_samples[time_range_samples['stats_dt'] != t_minus_1]
+        # 初始化特殊样本列表
+        special_samples = []
 
-        # 如果 t+1 和 t+2 的样本存在，检查它们的 abort_{period} 值
-        if not t_plus_1_sample.empty and not t_plus_2_sample.empty:
-            t_plus_1_abort = t_plus_1_sample.iloc[0][f'abort_{period}']
-            t_plus_2_abort = t_plus_2_sample.iloc[0][f'abort_{period}']
-            # 如果两天的 abort_{period} 值不同，删除 t+2 的数据
-            if t_plus_1_abort != t_plus_2_abort:
-                time_range_samples = time_range_samples[time_range_samples['stats_dt'] != t_plus_2]
+        # 按照猪场分组
+        grouped = data.groupby('pigfarm_dk')
+        
+        if (prev_status == 0 and next_status == 1) or (prev_status == 1 and next_status == 0):
+            for pigfarm, group_data in grouped:
+                # 按时间排序
+                sorted_data = group_data.sort_values('stats_dt')
 
-        return time_range_samples
+                # 找出时间t时abort_period为0(1)，时间t+1时abort_period为1(0)的时间点
+                for i in range(len(sorted_data) - 1):
+                    if sorted_data.iloc[i][f'abort_{period}'] == prev_status and sorted_data.iloc[i+1][f'abort_{period}'] == next_status:
+                        # 获取时间点t
+                        t = sorted_data.iloc[i]['stats_dt']
+                        
+                        # 找出t-1到t+2的所有样本
+                        farm_data = sorted_data.copy()
+                        t_minus_1 = t - pd.Timedelta(days=1)
+                        t_plus_1 = t + pd.Timedelta(days=1)
+                        t_plus_2 = t + pd.Timedelta(days=2)
+                        
+                        # 筛选时间范围内的样本
+                        time_range_samples = farm_data[(farm_data['stats_dt'] >= t_minus_1) & 
+                                                        (farm_data['stats_dt'] <= t_plus_2)]
+                        
+                        # 判断是否符合连续性，即两天的样本是相同的
+                        t_minus_1_sample = time_range_samples[time_range_samples['stats_dt'] == t_minus_1]
+                        t_sample = time_range_samples[time_range_samples['stats_dt'] == t]
+                        t_plus_1_sample = time_range_samples[time_range_samples['stats_dt'] == t_plus_1]
+                        t_plus_2_sample = time_range_samples[time_range_samples['stats_dt'] == t_plus_2]
+                        
+                        # 检查是否存在这两天的样本
+                        if not t_minus_1_sample.empty and not t_sample.empty:
+                            # 获取 abort_{period} 值
+                            t_minus_1_abort = t_minus_1_sample.iloc[0][f'abort_{period}']
+                            t_abort = t_sample.iloc[0][f'abort_{period}']
+                            
+                            # 如果两天的 abort_{period} 值不同，删除 t_minus_1 的数据
+                            if t_minus_1_abort != t_abort:
+                                time_range_samples = time_range_samples[time_range_samples['stats_dt'] != t_minus_1]
+
+                        # 如果 t+1 和 t+2 的样本存在，检查它们的 abort_{period} 值
+                        if not t_plus_1_sample.empty and not t_plus_2_sample.empty:
+                            t_plus_1_abort = t_plus_1_sample.iloc[0][f'abort_{period}']
+                            t_plus_2_abort = t_plus_2_sample.iloc[0][f'abort_{period}']
+                            # 如果两天的 abort_{period} 值不同，删除 t+2 的数据
+                            if t_plus_1_abort != t_plus_2_abort:
+                                time_range_samples = time_range_samples[time_range_samples['stats_dt'] != t_plus_2]
+                        
+                        # 添加到特殊样本列表
+                        special_samples.append(time_range_samples)
+        elif prev_status == 1 and next_status == 1:
+            special_samples = data[data[f'abort_{period}'] == 1].copy()
+            return special_samples
+        else:
+            raise ValueError("prev_status 和 next_status 的组合不合法，仅支持 (0, 1) 或 (1, 0) 或 (1, 1)")
+        
+        # 合并所有特殊样本
+        if len(special_samples) == 0:
+            self.logger.warning(f"没有找到满足条件的特殊样本，abortion_period: {period}, prev_status: {prev_status}, next_status: {next_status}")
+            return pd.DataFrame()
+        
+        return pd.concat(special_samples)
 
 
     def calculate_special_recall(self, special_samples):
@@ -252,41 +279,26 @@ class EvalData():
         # 获取预测数据
         data = self.predict_data.copy()
         
-        # 按照猪场分组
-        grouped = data.groupby('pigfarm_dk')
-
-        for pigfarm, group_data in grouped:
-            # 按时间排序
-            sorted_data = group_data.sort_values('stats_dt')
-
-            # 找出时间t时abort_period为0(1)，时间t+1时abort_period为1(0)的时间点
-            for i in range(len(sorted_data) - 1):
-                if sorted_data.iloc[i][f'abort_{period}'] == prev_status and sorted_data.iloc[i+1][f'abort_{period}'] == next_status:
-                    # 筛选特殊样本
-                    time_range_samples = self.get_special_sample1(sorted_data, i, period)
-                    
-                    # 添加到特殊样本列表
-                    special_samples.append(time_range_samples)
+        special_samples = self.get_special_sample(data, period, prev_status, next_status)
         
         # 合并所有特殊样本
         if len(special_samples) > 0:
-            index_sample = pd.concat(special_samples)
             # 2. 去重
-            index_sample = index_sample.drop_duplicates()
+            special_samples = special_samples.drop_duplicates()
             # 计算原始样本数量
-            total_samples_num = len(index_sample)
+            total_samples_num = len(special_samples)
             # 3. 剔除非瘟数据
-            index_sample = self.exclude_feiwen_data(index_sample, period)
+            special_samples = self.exclude_feiwen_data(special_samples, period)
             # 计算剔除后的样本数量
-            filtered_samples_num = len(index_sample)
+            filtered_samples_num = len(special_samples)
         else:
             self.logger.warning(f"没有找到满足条件的特殊样本，abortion_period: {period}")
             return 
         
         # 3. 计算评估指标
-        y_true = index_sample[f'abort_{period}'].values
-        y_pred = index_sample[f'abort_{period}_decision'].values
-        y_prob = index_sample[f'abort_{period}_pred'].values
+        y_true = special_samples[f'abort_{period}'].values
+        y_pred = special_samples[f'abort_{period}_decision'].values
+        y_prob = special_samples[f'abort_{period}_pred'].values
 
         # 计算指标
         precision = precision_score(y_true, y_pred, zero_division=0)
@@ -305,18 +317,18 @@ class EvalData():
                 self.logger.warning("无法计算AUC，可能是样本中只存在一个类别")
         
         # 4. 计算special_recall（时间段粒度）
-        special_recall = self.calculate_special_recall(index_sample)
+        special_recall = self.calculate_special_recall(special_samples)
 
         # 保存结果
         result_row = {
-            'stats_dt': f"{self.eval_running_dt_start} ~ {self.eval_running_dt_end}",
+            'stats_dt': f"{self.eval_running_dt_start_string} ~ {self.eval_running_dt_end_string}",
             'sample_type': sample_type,
             'total_sample_num': total_samples_num,
             'remain_sample_num': filtered_samples_num,
             'eval_period': period,
             'precision': precision,
             'recall': recall,
-            'f1': f1,
+            'f1_score': f1,
             'auc': auc,
             'special_recall': special_recall,
         }
@@ -332,10 +344,10 @@ class EvalData():
         
         # 1. 筛选特殊样本 - 所有真实值为1的样本
         data = self.predict_data.copy()
-        index_sample = data[data[f'abort_{period}'] == 1]
+        special_samples = self.get_special_sample(data, period, 1, 1)
         
         # 计算原始样本数量
-        total_samples_num = len(index_sample)
+        total_samples_num = len(special_samples)
         
         if total_samples_num == 0:
             if self.logger:
@@ -343,18 +355,18 @@ class EvalData():
             return
         
         # 2. 去重
-        index_sample = index_sample.drop_duplicates()
+        special_samples = special_samples.drop_duplicates()
         
         # 3. 剔除非瘟数据
-        index_sample = self.exclude_feiwen_data(index_sample, period)
+        special_samples = self.exclude_feiwen_data(special_samples, period)
         
         # 计算剔除后的样本数量
-        filtered_samples_num = len(index_sample)
+        filtered_samples_num = len(special_samples)
         
         # 4. 计算评估指标
-        y_true = index_sample[f'abort_{period}'].values
-        y_pred = index_sample[f'abort_{period}_decision'].values
-        y_prob = index_sample[f'abort_{period}_pred'].values
+        y_true = special_samples[f'abort_{period}'].values
+        y_pred = special_samples[f'abort_{period}_decision'].values
+        y_prob = special_samples[f'abort_{period}_pred'].values
 
         # 计算指标
         precision = precision_score(y_true, y_pred, zero_division=0)
@@ -373,11 +385,11 @@ class EvalData():
                 self.logger.warning("无法计算AUC，可能是样本中只存在一个类别")
 
         # 5. 计算special_recall（时间段粒度）
-        special_recall = self.calculate_special_recall(index_sample)
+        special_recall = self.calculate_special_recall(special_samples)
         
         # 保存结果
         result_row = {
-            'stats_dt': f"{self.eval_running_dt_start} ~ {self.eval_running_dt_end}",
+            'stats_dt': f"{self.eval_running_dt_start_string} ~ {self.eval_running_dt_end_string}",
             'sample_type': sample_type,
             'total_sample_num': total_samples_num,
             'remain_sample_num': filtered_samples_num,
@@ -436,43 +448,26 @@ class EvalData():
                 self.logger.warning(f"无法计算{abortion_period}的AUC，可能是样本中只存在一个类别")
         
         # 保存结果
-        if name is not None:
-            result_row = {
-                'stats_dt': f"{self.eval_running_dt_start} ~ {self.eval_running_dt_end}",
-                f'l{level}_name': name,
-                'total_sample_num': total_samples_num,
-                'remain_sample_num': filtered_samples_num,
-                'eval_period': abortion_period,
-                'precision': precision,
-                'recall': recall,
-                'f1': f1,
-                'auc': auc,
-                'recognition': self.recognition
-            }
-        elif exclude_feiwen:
-            result_row = {
-                'stats_dt': f"{self.eval_running_dt_start} ~ {self.eval_running_dt_end}",
-                'total_sample_num': total_samples_num,
-                'remain_sample_num': filtered_samples_num,
-                'eval_period': abortion_period,
-                'precision': precision,
-                'recall': recall,
-                'f1': f1,
-                'auc': auc,
-                'recognition': self.recognition
-            }
-        else:
-            result_row = {
-                'stats_dt': f"{self.eval_running_dt_start} ~ {self.eval_running_dt_end}",
-                'total_sample_num': total_samples_num,
-                'eval_period': abortion_period,
-                'precision': precision,
-                'recall': recall,
-                'f1': f1,
-                'auc': auc,
-                'recognition': self.recognition
-            }
-        self.result = pd.concat([self.result, pd.DataFrame([result_row])], ignore_index=True)
+        result_row = {
+            'stats_dt': f"{self.eval_running_dt_start_string} ~ {self.eval_running_dt_end_string}",
+            f'l{level}_name': name,
+            'total_sample_num': total_samples_num,
+            'remain_sample_num': filtered_samples_num,
+            'eval_period': abortion_period,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'auc': auc,
+            'recognition': self.recognition
+        }
+
+        result_df = pd.DataFrame([result_row])
+        if not exclude_feiwen:
+            result_df.drop(columns=['remain_sample_num'], inplace=True)
+        if hierarchical_data is None:
+            result_df.drop(columns=[f'l{level}_name'], inplace=True)
+
+        self.result = pd.concat([self.result, result_df], ignore_index=True)
 
 
     def eval_with_organizational_hierarchy(self):
@@ -636,6 +631,7 @@ class EvalData():
         
         return result_df
     
+    # 计算每个猪场流产率异常的时间间隔
     def calculate_abortion_interval(self):
         """
         计算每个猪场的流产率超过阈值间隔时间,间隔时间定义:以开始时间为基准，计算每个猪场的流产间隔时间
@@ -724,3 +720,520 @@ class EvalData():
             result_df = pd.concat([pd.DataFrame([avg_data]), result_df], ignore_index=True)
         
         return result_df
+
+
+class AbortionDaysPredictEvalData():
+    def __init__(self, predict_result, sample_ground_truth, eval_running_dt_start, eval_running_dt_end, logger=None):
+        """
+        初始化评估数据
+        :param predict_data: 预测数据 DataFrame
+        :param eval_running_dt_start: 评估开始日期
+        :param eval_running_dt_end: 评估结束日期
+        :param logger: 日志记录器
+        """
+        self.ground_truth_sample_num = len(sample_ground_truth)
+        self.predict_sample_num = len(predict_result)
+        self.recognition = self.ground_truth_sample_num / self.predict_sample_num if self.predict_sample_num > 0 else 0
+        
+        self.predict_data = sample_ground_truth.merge(
+            predict_result,          
+            on=['stats_dt', 'pigfarm_dk'],
+            how='left'
+        )
+
+        self.eval_running_dt_start = pd.to_datetime(eval_running_dt_start)
+        self.eval_running_dt_start_string = self.eval_running_dt_start.strftime('%Y-%m-%d')
+        self.eval_running_dt_end = pd.to_datetime(eval_running_dt_end)
+        self.eval_running_dt_end_string = self.eval_running_dt_end.strftime('%Y-%m-%d')
+        self.logger = logger
+        self.feiwen_dict = None
+
+
+    def exclude_feiwen_data(self, sample, period):
+        """
+        排除与非洲猪瘟时间有交集的样本
+        :param sample: 输入样本数据
+        :param period: 预测周期，'1_7', '8_14', '15_21'
+        :return: 过滤后的样本数据
+        """
+        # 根据period确定预测范围
+        if period == '1_7':
+            start, end = 1, 7
+        elif period == '8_14':
+            start, end = 8, 14
+        elif period == '15_21':
+            start, end = 15, 21
+        
+        # 缓存，加快速度
+        if self.feiwen_dict is None:
+            # 获取非瘟数据
+            feiwen_data = pd.read_csv("data/raw_data/ADS_PIG_FARM_AND_REARER_ONSET.csv", encoding='utf-8')
+            # 只保留需要的列
+            feiwen_data = feiwen_data[['org_inv_dk', 'start_dt', 'end_dt']]
+            # 转换日期格式
+            feiwen_data['start_dt'] = pd.to_datetime(feiwen_data['start_dt'])
+            feiwen_data['end_dt'] = pd.to_datetime(feiwen_data['end_dt'])
+            # 确保ID为字符串类型
+            feiwen_data['org_inv_dk'] = feiwen_data['org_inv_dk'].astype(str)
+            
+            # 确保ID为字符串类型
+            sample = sample.copy()
+            sample['pigfarm_dk'] = sample['pigfarm_dk'].astype(str)
+
+            # 按猪场ID对非瘟数据进行分组
+            feiwen_dict = {}
+            for farm_id, group in feiwen_data.groupby('org_inv_dk'):
+                feiwen_dict[farm_id] = group[['start_dt', 'end_dt']].values.tolist()
+            self.feiwen_dict = feiwen_dict
+        
+        feiwen_dict = self.feiwen_dict
+            
+        # 计算样本的预测开始和结束日期
+        sample['predict_start'] = sample['stats_dt'] + pd.Timedelta(days=start)
+        sample['predict_end'] = sample['stats_dt'] + pd.Timedelta(days=end)
+
+        # 创建一个标记是否为非瘟样本的列
+        sample['is_feiwen'] = False
+
+        # 检查每个样本是否与非瘟时间有交集
+        for idx, row in sample.iterrows():
+            farm_id = row['pigfarm_dk']
+            
+            # 如果该猪场有非瘟记录，则检查是否有时间交集
+            if farm_id in feiwen_dict:
+                predict_start = row['predict_start']
+                predict_end = row['predict_end']
+                
+                # 检查是否与任何一个非瘟时间段有交集
+                for feiwen_start, feiwen_end in feiwen_dict[farm_id]:
+                    feiwen_start = pd.to_datetime(feiwen_start)
+                    feiwen_end = pd.to_datetime(feiwen_end)
+                    # 有交集的条件: 非瘟开始日期 <= 预测结束日期 且 预测开始日期 <= 非瘟结束日期
+                    if feiwen_start <= predict_end and predict_start <= feiwen_end:
+                        sample.at[idx, 'is_feiwen'] = True
+                        break
+        
+        # 过滤掉与非瘟时间有交集的样本
+        filtered_sample = sample[~sample['is_feiwen']]
+        
+        # 删除临时列
+        filtered_sample = filtered_sample.drop(['predict_start', 'predict_end', 'is_feiwen'], axis=1)
+        
+        return filtered_sample
+
+
+    def calculate_trend_accuracy(self, period, prev_status, next_status):
+        """
+        计算趋势准确率
+        :param period: 预测周期，'1_7', '8_14', '15_21'
+        :param prev_status: 前一天的状态，0或1
+        :param next_status: 后一天的状态，0或1
+        :return: 上升趋势准确率
+        """
+        data = self.predict_data.copy()
+        
+        # 总天数 T1
+        total_days = 0
+        # 预测正确的天数 T2
+        correct_days = 0
+
+        # 按猪场分组
+        for pigfarm, group_data in data.groupby('pigfarm_dk'):
+            # 按时间排序
+            sorted_data = group_data.sort_values('stats_dt')
+            
+            # 获取真实值和预测值
+            y_true = sorted_data[f'abort_days_{period}'].values
+            y_pred = sorted_data[f'abort_days_{period}_pred'].values
+            
+            if prev_status == 0 and next_status == 1:
+                # 查找真实值递增的天数
+                for i in range(1, len(y_true)):
+                    if y_true[i] > y_true[i-1]:  # 真实值递增
+                        total_days += 1
+                        # 检查预测值是否也递增
+                        if y_pred[i] > y_pred[i-1]:
+                            correct_days += 1
+            elif prev_status == 1 and next_status == 0:
+                # 查找真实值递减的天数
+                for i in range(1, len(y_true)):
+                    if y_true[i] < y_true[i-1]:
+                        total_days += 1
+                        # 检查预测值是否也递减
+                        if y_pred[i] < y_pred[i-1]:
+                            correct_days += 1
+
+        # 计算趋势准确率
+        trend_accuracy = correct_days / total_days if total_days > 0 else 0
+
+        return trend_accuracy
+
+
+    def get_special_sample(self, data, period, prev_status, next_status):
+        """
+        获取特殊样本
+        :param data: 输入数据 DataFrame
+        :param period: 预测周期，'1_7', '8_14', '15_21'
+        :param prev_status: 前一天的状态，0或1
+        :param next_status: 后一天的状态，0或1
+        :return: 特殊样本 DataFrame
+        """
+        # 特殊样本
+        special_samples = []
+
+        # 按照猪场分组
+        grouped = data.groupby('pigfarm_dk')
+
+        # 确定前后状态
+        if prev_status == 0 and next_status == 1:
+            for pigfarm, group_data in grouped:
+                # 按时间排序
+                sorted_data = group_data.sort_values('stats_dt')
+
+                # 找出时间t时abort_period为0，时间t+1时abort_period为1的时间点
+                for i in range(len(sorted_data) - 1):
+                    if sorted_data.iloc[i][f'abort_{period}'] == prev_status and sorted_data.iloc[i+1][f'abort_{period}'] == next_status:         
+                        # 获取时间点t
+                        t = sorted_data.iloc[i]['stats_dt']
+                        # 获取时间点t-1和t+7
+                        t_minus_1 = t - pd.Timedelta(days=1)
+                        t_plus_8 = t + pd.Timedelta(days=8)
+                        # 筛选时间范围内的样本
+                        time_range_samples = sorted_data[(sorted_data['stats_dt'] >= t_minus_1) & 
+                                                        (sorted_data['stats_dt'] <= t_plus_8)]
+                        # 创建一个以日期为索引的DataFrame方便查找
+                        time_range_samples_index = time_range_samples.set_index('stats_dt')
+                        
+                        # 正常部分样本，范围为2
+                        # 确保t-1的abort_period为0
+                        t_minus_1_sample = time_range_samples[time_range_samples['stats_dt'] == t_minus_1]
+                        if t_minus_1_sample.empty or t_minus_1_sample.iloc[0][f'abort_{period}'] != 0:
+                            time_range_samples = time_range_samples[time_range_samples['stats_dt'] != t_minus_1]
+
+                        # 异常部分样本，范围为递增范围
+                        current_day = t + pd.Timedelta(days=3)
+                        prev_value = 1
+                        while current_day in time_range_samples_index.index:
+                            current_value = time_range_samples_index.loc[current_day][f'abort_{period}']
+                            if current_value < prev_value:
+                                break
+                            prev_value = current_value
+                            current_day += pd.Timedelta(days=1)
+                        # 筛选出递增范围内的样本
+                        time_range_samples = time_range_samples[(time_range_samples['stats_dt'] <= current_day)]
+                        special_samples.append(time_range_samples)
+        elif prev_status == 1 and next_status == 0:
+            for pigfarm, group_data in grouped:
+                # 按时间排序
+                sorted_data = group_data.sort_values('stats_dt')
+
+                # 找出时间t时abort_period为1，时间t+1时abort_period为0的时间点
+                for i in range(len(sorted_data) - 1):
+                    if sorted_data.iloc[i][f'abort_{period}'] == prev_status and sorted_data.iloc[i+1][f'abort_{period}'] == next_status:         
+                        # 获取时间点t
+                        t = sorted_data.iloc[i]['stats_dt']
+                        # 获取时间点t-1和t+7
+                        t_minus_7 = t - pd.Timedelta(days=7)
+                        t_plus_2 = t + pd.Timedelta(days=2)
+                        # 筛选时间范围内的样本
+                        time_range_samples = sorted_data[(sorted_data['stats_dt'] >= t_minus_7) & 
+                                                        (sorted_data['stats_dt'] <= t_plus_2)]
+                        # 创建一个以日期为索引的DataFrame方便查找
+                        time_range_samples_index = time_range_samples.set_index('stats_dt')
+                        
+                        # 正常部分样本，范围为2
+                        # 确保t+2的abort_period为0
+                        t_plus_2_sample = time_range_samples[time_range_samples['stats_dt'] == t_plus_2]
+                        if t_plus_2_sample.empty or t_plus_2_sample.iloc[0][f'abort_{period}'] != 0:
+                            time_range_samples = time_range_samples[time_range_samples['stats_dt'] != t_plus_2]
+
+                        # 异常部分样本，范围为递增范围
+                        current_day = t - pd.Timedelta(days=1)
+                        prev_value = 1
+                        while current_day in time_range_samples_index.index:
+                            current_value = time_range_samples_index.loc[current_day][f'abort_{period}']
+                            if current_value < prev_value:
+                                break
+                            prev_value = current_value
+                            current_day -= pd.Timedelta(days=1)
+                        # 筛选出递增范围内的样本
+                        time_range_samples = time_range_samples[(time_range_samples['stats_dt'] <= current_day)]
+                        
+                        special_samples.append(time_range_samples)
+        elif prev_status == 1 and next_status == 1:
+            special_samples = data[(data[f'abort_days_{period}'] == 6) | (data[f'abort_days_{period}'] == 7)].copy()
+            return special_samples
+        else:
+            raise ValueError("prev_status 和 next_status 的组合不正确，请检查输入参数。")
+        
+        # 合并所有特殊样本
+        if len(special_samples) == 0:
+            self.logger.warning(f"没有找到满足条件的特殊样本，abortion_period: {period}, prev_status: {prev_status}, next_status: {next_status}")
+            return pd.DataFrame()
+        
+        return pd.concat(special_samples)
+
+
+    def special_sample_1_eval_one_periods_metric(self, period, prev_status, next_status):
+        """
+        特殊样本1：计算前一天为prev_status(01)，后一天为next_status(10)的评估指标
+        :param period: 预测周期，'1_7', '8_14', '15_21'
+        :param prev_status: 前一天的状态，0或1
+        :param next_status: 后一天的状态，0或1
+        """
+        if prev_status == 0 and next_status == 1:
+            sample_type = 'normal-2_to_abnormal'
+        elif prev_status == 1 and next_status == 0:
+            sample_type = 'abnormal_to_normal-2'
+        
+        # 1. 获取特殊样本
+        index_sample = self.get_special_sample(self.predict_data.copy(), period, prev_status, next_status)
+        # 2. 去重
+        index_sample = index_sample.drop_duplicates()
+        # 计算原始样本数量
+        total_samples_num = len(index_sample)
+        # 3. 剔除非瘟数据
+        index_sample = self.exclude_feiwen_data(index_sample, period)
+        # 计算剔除后的样本数量
+        filtered_samples_num = len(index_sample)
+        
+        # 4. 计算评估指标
+        y_true = index_sample[f'abort_days_{period}'].values
+        y_pred = index_sample[f'abort_days_{period}_pred'].values
+
+        # 计算指标
+        report = classification_report(y_true, y_pred, labels=range(8), output_dict=True)
+        trend_accuracy = self.calculate_trend_accuracy(period, prev_status, next_status)
+
+        # 初始化结果列表
+        results = []
+
+        # 为每个类别创建一条记录
+        for label in range(8):
+            if str(label) in report:
+                result_row = {
+                    'stats_dt': f"{self.eval_running_dt_start_string} ~ {self.eval_running_dt_end_string}",
+                    'total_sample_num': total_samples_num,
+                    'remain_sample_num': filtered_samples_num,
+                    'eval_period': period,
+                    'label': label,
+                    'precision': report[str(label)]['precision'],
+                    'recall': report[str(label)]['recall'],
+                    'f1_score': report[str(label)]['f1-score'],
+                    'trend_accuracy': trend_accuracy,
+                    'recognition': self.recognition
+                }
+                results.append(result_row)
+
+        # 计算加权指标
+        result_row = {
+            'stats_dt': f"{self.eval_running_dt_start_string} ~ {self.eval_running_dt_end_string}",
+            'total_sample_num': total_samples_num,
+            'remain_sample_num': filtered_samples_num,
+            'eval_period': period,
+            'label': 'all',
+            'precision': report['weighted avg']['precision'],
+            'recall': report['weighted avg']['recall'],
+            'f1_score': report['weighted avg']['f1-score'],
+            'trend_accuracy': trend_accuracy,
+            'recognition': self.recognition
+        }
+        results.append(result_row)
+
+        self.result = pd.concat([self.result, pd.DataFrame(results)], ignore_index=True)
+
+
+    def special_sample_2_eval_one_periods_metric(self, period):
+        """
+        特殊样本2：计算abnormal_to_abnormal的评估指标
+        :param period: 预测周期，'1_7', '8_14', '15_21'
+        """
+        # 1. 获取特殊样本
+        index_sample = self.get_special_sample1(self.predict_data.copy(), period, 1, 1)
+        # 2. 去重
+        index_sample = index_sample.drop_duplicates()
+        # 计算原始样本数量
+        total_samples_num = len(index_sample)
+        # 3. 剔除非瘟数据
+        index_sample = self.exclude_feiwen_data(index_sample, period)
+        # 计算剔除后的样本数量
+        filtered_samples_num = len(index_sample)
+
+        # 4. 计算评估指标
+        y_true = index_sample[f'abort_days_{period}'].values
+        y_pred = index_sample[f'abort_days_{period}_pred'].values
+        # 计算指标
+        report = classification_report(y_true, y_pred, labels=range(6,8), output_dict=True)
+        # 初始化结果列表
+        results = []
+        # 为每个类别创建一条记录
+        for label in range(6, 8):
+            if str(label) in report:
+                result_row = {
+                    'stats_dt': f"{self.eval_running_dt_start_string} ~ {self.eval_running_dt_end_string}",
+                    'total_sample_num': total_samples_num,
+                    'remain_sample_num': filtered_samples_num,
+                    'eval_period': period,
+                    'label': label,
+                    'precision': report[str(label)]['precision'],
+                    'recall': report[str(label)]['recall'],
+                    'f1_score': report[str(label)]['f1-score'],
+                    'trend_accuracy': '-',
+                    'recognition': self.recognition
+                }
+                results.append(result_row)
+
+        # 计算加权指标
+        result_row = {
+            'stats_dt': f"{self.eval_running_dt_start_string} ~ {self.eval_running_dt_end_string}",
+            'total_sample_num': total_samples_num,
+            'remain_sample_num': filtered_samples_num,
+            'eval_period': period,
+            'label': 'all',
+            'precision': report['weighted avg']['precision'],
+            'recall': report['weighted avg']['recall'],
+            'f1_score': report['weighted avg']['f1-score'],
+            'trend_accuracy': '-',
+            'recognition': self.recognition
+        }
+
+
+    def overall_eval_one_periods_metric(self, abortion_period, exclude_feiwen=True, hierarchical_data=None, level=None, name=None):
+        """
+        计算整体指标
+        :param abortion_period: 预测周期，'1_7', '8_14', '15_21'
+        :param exclude_feiwen: 是否排除非洲猪瘟数据
+        """
+        # 获取数据
+        if hierarchical_data is not None:
+            data = hierarchical_data.copy()
+        else:
+            data = self.predict_data.copy()
+        
+        # 计算原始样本数量
+        total_samples_num = len(data)
+
+        # 如果需要排除非瘟数据
+        if exclude_feiwen:
+            # 剔除非瘟数据
+            data = self.exclude_feiwen_data(data, abortion_period)
+
+        # 计算剔除后的样本数量
+        filtered_samples_num = len(data)
+
+        # 获取标签和预测值
+        y_true = data[f'abort_days_{abortion_period}'].values
+        y_pred = data[f'abort_days_{abortion_period}_pred'].values
+        
+        # 计算指标
+        report = classification_report(y_true, y_pred, labels=range(8), output_dict=True)
+
+        # 初始化结果列表
+        results = []
+
+        # 为每个类别创建一条记录
+        for label in range(8):
+            if str(label) in report:
+                result_row = {
+                    'stats_dt': f"{self.eval_running_dt_start_string} ~ {self.eval_running_dt_end_string}",
+                    f'l{level}_name': name,
+                    'total_sample_num': total_samples_num,
+                    'remain_sample_num': filtered_samples_num,
+                    'eval_period': abortion_period,
+                    'label': label,
+                    'precision': report[str(label)]['precision'],
+                    'recall': report[str(label)]['recall'],
+                    'f1_score': report[str(label)]['f1-score'],
+                    'recognition': self.recognition
+                }
+                results.append(result_row)
+
+        # 计算加权指标
+        result_row = {
+            'stats_dt': f"{self.eval_running_dt_start_string} ~ {self.eval_running_dt_end_string}",
+            f'l{level}_name': name,
+            'total_sample_num': total_samples_num,
+            'remain_sample_num': filtered_samples_num,
+            'eval_period': abortion_period,
+            'label': 'all',
+            'precision': report['weighted avg']['precision'],
+            'recall': report['weighted avg']['recall'],
+            'f1_score': report['weighted avg']['f1-score'],
+            'recognition': self.recognition
+        }
+        results.append(result_row)
+
+        result_df = pd.DataFrame(results)
+        if not exclude_feiwen:
+            result_df.drop(columns=['remain_sample_num'], inplace=True)
+        if hierarchical_data is None:
+            result_df.drop(columns=[f'l{level}_name'], inplace=True)
+
+        self.result = pd.concat([self.result, result_df], ignore_index=True)
+
+
+    def eval_with_organizational_hierarchy(self):
+        """计算不同组织层级的评估指标"""
+        
+        # 1. L2级别组织评估
+        self.result = pd.DataFrame()
+        l2_groups = self.predict_data.groupby('l2_org_inv_nm')
+        
+        for l2_name, l2_data in tqdm(l2_groups, desc='L2级别组织评估'):
+            # 对每个时间段进行评估
+            for abortion_period in ['1_7', '8_14', '15_21']:
+                # 使用this l2组的数据进行评估
+                self.overall_eval_one_periods_metric(abortion_period, exclude_feiwen=True, hierarchical_data=l2_data, level=2, name=l2_name)
+      
+        l2_results = self.result.copy()
+        
+        # 2. L3级别组织评估
+        self.result = pd.DataFrame()
+        l3_groups = self.predict_data.groupby('l3_org_inv_nm')
+
+        for l3_name, l3_data in tqdm(l3_groups, desc='L3级别组织评估'):
+            for abortion_period in ['1_7', '8_14', '15_21']:
+                self.overall_eval_one_periods_metric(abortion_period, exclude_feiwen=True, hierarchical_data=l3_data, level=3, name=l3_name)
+
+        l3_results = self.result.copy()
+
+        # 3. L4级别组织评估
+        self.result = pd.DataFrame()
+        l4_groups = self.predict_data.groupby('l4_org_inv_nm')
+
+        for l4_name, l4_data in tqdm(l4_groups, desc='L4级别组织评估'):
+            # 跳过缺失的组织名称
+            if pd.isna(l4_name):
+                continue
+            for abortion_period in ['1_7', '8_14', '15_21']:
+                self.overall_eval_one_periods_metric(abortion_period, exclude_feiwen=True, hierarchical_data=l4_data, level=4, name=l4_name)
+            
+        l4_results = self.result.copy()
+        
+        return l2_results, l3_results, l4_results
+
+
+    # 计算整体指标
+    def eval_all_samples(self):
+        self.result = pd.DataFrame() # 清空上一次的结果
+        for abortion_period in tqdm(['1_7', '8_14', '15_21'], desc='计算整体指标'):
+            self.overall_eval_one_periods_metric(abortion_period, exclude_feiwen=False)
+
+        return self.result
+    
+    # 计算剔除非瘟整体指标
+    def eval_all_samples_exclude_feiwen(self):
+        self.result = pd.DataFrame() # 清空上一次的结果
+        for abortion_period in tqdm(['1_7', '8_14', '15_21'], desc='计算剔除非瘟整体指标'):
+            self.overall_eval_one_periods_metric(abortion_period)
+
+        return self.result
+    
+    # 计算分级组织指标
+    def eval_organizational_hierarchy(self):
+        l2_results, l3_results, l4_results = self.eval_with_organizational_hierarchy()
+        return l2_results, l3_results, l4_results
+    
+
+
+

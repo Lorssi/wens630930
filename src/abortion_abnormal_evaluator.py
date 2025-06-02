@@ -5,7 +5,7 @@ import torch
 import argparse
 
 # todo 之后工程化
-from abortion_abnormal.eval.main import AbortionAbnormalEval1
+from abortion_abnormal.eval.main import AbortionAbnormalPredictEval
 from abortion_abnormal.module import data_pre_process_main
 
 
@@ -23,7 +23,7 @@ class AbortionAbnormalEvaluator:
         logger.info(f"abortion_abnormal initialized with parameters: {self.task_param}")
         try:
             logger.info('----------------------------------------开始预警 执行测试流程----------------------------------------')
-            logger.info('是否存在显卡:', torch.cuda.is_available())
+            logger.info(torch.cuda.is_available())
             # 参数初始化
             train_running_dt = self.task_param.get('train_running_dt')
             train_interval = self.task_param.get('train_interval')
@@ -71,7 +71,7 @@ class AbortionAbnormalEvaluator:
 
             logger.info('----------------------------------------测试模型评估----------------------------------------')
             # todo 模型评估模块
-            abortion_abnormal_eval = AbortionAbnormalEval1(logger=logger)
+            abortion_abnormal_eval = AbortionAbnormalPredictEval(logger=logger)
             abortion_abnormal_eval.build_eval_set(eval_running_dt=predict_running_dt, eval_interval=predict_interval)
             abortion_abnormal_eval.eval_with_index_sample()
             logger.info( '----------------------------------------测试流程运行结束----------------------------------------')
@@ -113,17 +113,18 @@ if __name__ == "__main__":
     # }
 
     # predict_running_dts = ['2024-02-29', '2024-05-31', '2024-08-31', '2024-11-30']
+    predict_running_dts = ['2024-02-29']
     
-    # for predict_running_dt in predict_running_dts:
-    task_param = {
-        'predict_running_dt': '2024-05-31',
-        'predict_interval': 30,
-        # 'train_running_dt': '2024-10-01',
-        # 'train_interval': 100
-    }
+    for predict_running_dt in predict_running_dts:
+        task_param = {
+            'predict_running_dt': predict_running_dt,
+            'predict_interval': 30,
+            # 'train_running_dt': '2024-10-01',
+            # 'train_interval': 100
+        }
 
-    # 初始化评测类
-    evaluator = AbortionAbnormalEvaluator(task_param=task_param)
+        # 初始化评测类
+        evaluator = AbortionAbnormalEvaluator(task_param=task_param)
 
-    # 执行评测
-    evaluator.eval_and_post_process()
+        # 执行评测
+        evaluator.eval_and_post_process()
