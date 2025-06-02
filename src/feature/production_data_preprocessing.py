@@ -315,8 +315,6 @@ class ProductionDataPreprocessor:
         production_feature = self.production_data[feature_columns].copy()
         # 确保数据按日期和猪场排序
         production_feature.sort_values(by=['stats_dt', 'pigfarm_dk'], inplace=True)
-        production_feature.to_csv("production_feature.csv", index=False)
-        assert False
         # 日期加1用于模拟当前没有数据
         production_feature['stats_dt'] = production_feature['stats_dt'] + pd.Timedelta(days=1)
         # 将特征合并到index_data上
