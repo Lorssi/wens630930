@@ -14,7 +14,7 @@ class ProductionDataPreprocessor:
         self.end_date = pd.to_datetime(running_dt) - pd.Timedelta(days=1)
         self.abortion_feature_columns = ['abortion_feature_1_7', 'abortion_mean_recent_7d', 'abortion_mean_recent_14d', 'abortion_mean_recent_21d']
         self.boar_feature_columns = ['boar_transin_times_30d', 'boar_transin_qty_30d', 'boar_transin_ratio_30d_1', 'boar_transin_ratio_30d_2']
-        self.preg_stock_feature_columns = ['preg_stock_sqty_change_ratio_7d', 'preg_stock_sqty_change_ratio_15d', 'preg_stock_sqty']
+        self.preg_stock_feature_columns = ['preg_stock_sqty_change_ratio_7d', 'preg_stock_sqty_change_ratio_15d', 'preg_stock_qty']
         self.reserve_sow_feature_columns = ['reserve_sow_sqty', 'reserve_sow_sqty_change_ratio_7d', 'reserve_sow_sqty_change_ratio_15d']
         self.basesow_feature_columns = ['basesow_sqty', 'basesow_sqty_change_ratio_7d', 'basesow_sqty_change_ratio_15d']
         self.load_data()
@@ -124,27 +124,19 @@ class ProductionDataPreprocessor:
             .reset_index(level=0, drop=True)
         
         # 3. 为第二个比率计算30天其他指标
-        self.production_data['basesow_qty_30d'] = self.production_data.groupby('pigfarm_dk')['basesow_qty']\
-            .rolling(window=30, min_periods=1).sum()\
-            .reset_index(level=0, drop=True)
-            
-        self.production_data['basempig_sqty_30d'] = self.production_data.groupby('pigfarm_dk')['basempig_sqty']\
-            .rolling(window=30, min_periods=1).sum()\
-            .reset_index(level=0, drop=True)
-            
-        self.production_data['reserve_sow_qty_30d'] = self.production_data.groupby('pigfarm_dk')['reserve_sow_qty']\
-            .rolling(window=30, min_periods=1).sum()\
-            .reset_index(level=0, drop=True)
-            
-        self.production_data['reserve_mpig_qty_30d'] = self.production_data.groupby('pigfarm_dk')['reserve_mpig_qty']\
-            .rolling(window=30, min_periods=1).sum()\
-            .reset_index(level=0, drop=True)
-        
+        self.production_data['basesow_sqty_30d_ago'] = self.production_data.groupby('pigfarm_dk')['basesow_sqty'].shift(30)
+
+        self.production_data['basempig_sqty_30d_ago'] = self.production_data.groupby('pigfarm_dk')['basempig_sqty'].shift(30)
+
+        self.production_data['reserve_sow_sqty_30d_ago'] = self.production_data.groupby('pigfarm_dk')['reserve_sow_sqty'].shift(30)
+
+        self.production_data['reserve_mpig_sqty_30d_ago'] = self.production_data.groupby('pigfarm_dk')['reserve_mpig_sqty'].shift(30)
+
         # 4. 计算boar_transin_ratio_30d_1 (基于当前存栏)
         def calculate_boar_ratio(row):
             numerator = row['boar_transin_qty_30d']
-            denominator = (row['basesow_qty'] + row['basempig_sqty'] + 
-                          row['reserve_sow_qty'] + row['reserve_mpig_qty'] + 
+            denominator = (row['basesow_sqty'] + row['basempig_sqty'] + 
+                          row['reserve_sow_sqty'] + row['reserve_mpig_sqty'] + 
                           row['boar_transin_qty_30d'])
             
             if denominator == 0:
@@ -154,11 +146,11 @@ class ProductionDataPreprocessor:
         
         self.production_data['boar_transin_ratio_30d_1'] = self.production_data.apply(calculate_boar_ratio, axis=1)
         
-        # 5. 计算boar_transin_ratio_30d_2 (基于30天累计)
+        # 5. 计算boar_transin_ratio_30d_2 (基于30天前数量)
         def calculate_boar_ratio_30d(row):
             numerator = row['boar_transin_qty_30d']
-            denominator = (row['basesow_qty_30d'] + row['basempig_sqty_30d'] + 
-                          row['reserve_sow_qty_30d'] + row['reserve_mpig_qty_30d'] + 
+            denominator = (row['basesow_sqty_30d_ago'] + row['basempig_sqty_30d_ago'] + 
+                          row['basempig_sqty_30d_ago'] + row['reserve_sow_sqty_30d_ago'] + 
                           row['boar_transin_qty_30d'])
             
             if denominator == 0:
@@ -176,7 +168,7 @@ class ProductionDataPreprocessor:
         计算怀孕母猪特征:
         1. preg_stock_sqty_change_ratio_7d: 与7天前（T-6）相比的存栏量变化率
         2. preg_stock_sqty_change_ratio_15d: 与15天前（T-14）相比的存栏量变化率 
-        3. preg_stock_sqty: 近7天存栏量平均值
+        3. preg_stock_sqty: preg_stock_qty对应数据
         """
         # 确保preg_stock_qty是数值类型
         self.production_data['preg_stock_qty'] = pd.to_numeric(self.production_data['preg_stock_qty'], errors='coerce').fillna(0)
@@ -209,8 +201,8 @@ class ProductionDataPreprocessor:
             lambda row: calculate_change_ratio(row, 14), axis=1)
         
         # 计算后备母猪存栏量
-        self.production_data['preg_stock_sqty'] = self.production_data.groupby('pigfarm_dk')['preg_stock_qty'].shift(1)
-        
+        self.production_data['preg_stock_sqty'] = self.production_data['preg_stock_qty']
+
         logger.info("怀孕母猪特征计算完成")
 
 
@@ -222,16 +214,16 @@ class ProductionDataPreprocessor:
         3. reserve_sow_sqty_change_ratio_15d: 与15天前（T-14）相比的存栏量变化率
         """
         # 确保reserve_sow_qty是数值类型
-        self.production_data['reserve_sow_qty'] = pd.to_numeric(self.production_data['reserve_sow_qty'], errors='coerce').fillna(0)
+        self.production_data['reserve_sow_sqty'] = pd.to_numeric(self.production_data['reserve_sow_sqty'], errors='coerce').fillna(0)
         
         # 按猪场分组并计算7天和15天前的存栏量
-        self.production_data['reserve_sow_qty_6d_ago'] = self.production_data.groupby('pigfarm_dk')['reserve_sow_qty'].shift(6)
-        self.production_data['reserve_sow_qty_14d_ago'] = self.production_data.groupby('pigfarm_dk')['reserve_sow_qty'].shift(14)
+        self.production_data['reserve_sow_sqty_6d_ago'] = self.production_data.groupby('pigfarm_dk')['reserve_sow_sqty'].shift(6)
+        self.production_data['reserve_sow_sqty_14d_ago'] = self.production_data.groupby('pigfarm_dk')['reserve_sow_sqty'].shift(14)
         
         # 计算变化率
         def calculate_change_ratio(row, days):
-            current = row['reserve_sow_qty']
-            previous = row[f'reserve_sow_qty_{days}d_ago']
+            current = row['reserve_sow_sqty']
+            previous = row[f'reserve_sow_sqty_{days}d_ago']
             
             # 处理缺失值
             if pd.isna(previous):
@@ -251,8 +243,8 @@ class ProductionDataPreprocessor:
         self.production_data['reserve_sow_sqty_change_ratio_15d'] = self.production_data.apply(
             lambda row: calculate_change_ratio(row, 14), axis=1)
         
-        # 直接使用reserve_sow_qty作为reserve_sow_sqty
-        self.production_data['reserve_sow_sqty'] = self.production_data['reserve_sow_qty']
+        # 直接使用reserve_sow_sqty作为reserve_sow_sqty
+        self.production_data['reserve_sow_sqty'] = self.production_data['reserve_sow_sqty']
         
         logger.info("后备母猪特征计算完成")
 
@@ -265,16 +257,16 @@ class ProductionDataPreprocessor:
         3. basesow_sqty_change_ratio_15d: 与15天前（T-14）相比的存栏量变化率
         """
         # 确保basesow_qty是数值类型
-        self.production_data['basesow_qty'] = pd.to_numeric(self.production_data['basesow_qty'], errors='coerce').fillna(0)
-        
+        self.production_data['basesow_sqty'] = pd.to_numeric(self.production_data['basesow_sqty'], errors='coerce').fillna(0)
+
         # 按猪场分组并计算6天和14天前的存栏量
-        self.production_data['basesow_qty_6d_ago'] = self.production_data.groupby('pigfarm_dk')['basesow_qty'].shift(6)
-        self.production_data['basesow_qty_14d_ago'] = self.production_data.groupby('pigfarm_dk')['basesow_qty'].shift(14)
+        self.production_data['basesow_sqty_6d_ago'] = self.production_data.groupby('pigfarm_dk')['basesow_sqty'].shift(6)
+        self.production_data['basesow_sqty_14d_ago'] = self.production_data.groupby('pigfarm_dk')['basesow_sqty'].shift(14)
         
         # 计算变化率
         def calculate_change_ratio(row, days):
-            current = row['basesow_qty']
-            previous = row[f'basesow_qty_{days}d_ago']
+            current = row['basesow_sqty']
+            previous = row[f'basesow_sqty_{days}d_ago']
             
             # 处理缺失值
             if pd.isna(previous):
@@ -295,7 +287,7 @@ class ProductionDataPreprocessor:
             lambda row: calculate_change_ratio(row, 14), axis=1)
         
         # 直接使用basesow_qty作为basesow_sqty
-        self.production_data['basesow_sqty'] = self.production_data['basesow_qty']
+        self.production_data['basesow_sqty'] = self.production_data['basesow_sqty']
         
         logger.info("基础母猪特征计算完成")
 
