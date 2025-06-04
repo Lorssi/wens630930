@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 from configs.logger_config import logger_config
 from configs.feature_config import ColumnsConfig, DataPathConfig
 import config
-from dataset.dataset import HasRiskDataset, MultiTaskDataset, DaysDataset
+from dataset.dataset import HasRiskDataset, MultiTaskDataset, DaysPredictDataset
 from utils.logger import setup_logger
 from utils.early_stopping import EarlyStopping
 from utils.save_csv import save_to_csv, read_csv
@@ -32,6 +32,9 @@ from model.nfm import Has_Risk_NFM
 from model.multi_task_nfm import Multi_Task_NFM
 from model.days_nfm import Days_NFM
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
+from dataset.days_prediction_index_sample_dataset import DaysPredictionIndexSampleDataset
+from dataset.days_prediction_feature_dataset import DaysPredictionFeatureDataset
+from module.future_generate_main import FeatureGenerateMain
 # 设置浮点数显示为小数点后2位，抑制科学计数法
 # np.set_printoptions(precision=2, suppress=True)
 
@@ -48,28 +51,15 @@ def _collate_fn(batch):
     # 初始化列表
     features_list = []
     
-    # 多任务分类（后三个标签）
-    days_label_1_7_list = []
-    days_label_8_14_list = []
-    days_label_15_21_list = []
-    
-    for feature, label in batch:
+    for feature in batch:
         # 添加特征
         features_list.append(feature)
-        
-        # 多任务分类（后三个）- 每个任务单独处理
-        days_label_1_7_list.append(label[0])  # 1-7天标签
-        days_label_8_14_list.append(label[1]) # 8-14天标签
-        days_label_15_21_list.append(label[2]) # 15-21天标签
     
     # 转换为张量
-    features_tensor = torch.tensor(features_list, dtype=torch.float32)
-    days_1_7_tensor = torch.tensor(days_label_1_7_list, dtype=torch.long)    # 分类标签用long
-    days_8_14_tensor = torch.tensor(days_label_8_14_list, dtype=torch.long)
-    days_15_21_tensor = torch.tensor(days_label_15_21_list, dtype=torch.long)
+    features_tensor = torch.tensor(np.array(features_list), dtype=torch.float32)
     
     # 返回特征和所有标签
-    return features_tensor, days_1_7_tensor, days_8_14_tensor, days_15_21_tensor
+    return features_tensor
 
     # 针对空值做处理
 def mask_feature_null(data = None, mode='train'):
@@ -133,7 +123,7 @@ def predict_model(model, predict_loader, device, predict_index):
     
     # 不计算梯度，提高效率
     with torch.no_grad():
-        for inputs, _, _, _ in tqdm(predict_loader, desc="预测进度"):
+        for inputs in tqdm(predict_loader, desc="预测进度"):
             # 将输入数据移动到指定设备
             inputs = inputs.to(device)
             
@@ -178,110 +168,95 @@ def predict_model(model, predict_loader, device, predict_index):
     # 将预测结果添加到预测索引DataFrame中
     
     # 1-7天任务预测结果
-    predict_index['abort_day_1_7_pred'] = predictions_1_7
+    predict_index['abort_days_1_7'] = predictions_1_7
     for i in range(probabilities_1_7.shape[1]):
         predict_index[f'prob_abort_day_1_7_pred_{i}'] = probabilities_1_7[:, i]
     
     # 8-14天任务预测结果
-    predict_index['abort_day_8_14_pred'] = predictions_8_14
+    predict_index['abort_days_8_14'] = predictions_8_14
     for i in range(probabilities_8_14.shape[1]):
-        predict_index[f'prob_abort_day_1_7_pred_{i}'] = probabilities_8_14[:, i]
+        predict_index[f'prob_abort_day_8_14_pred_{i}'] = probabilities_8_14[:, i]
     
     # 15-21天任务预测结果
-    predict_index['abort_day_15_21_pred'] = predictions_15_21
+    predict_index['abort_days_15_21'] = predictions_15_21
     for i in range(probabilities_15_21.shape[1]):
-        predict_index[f'prob_abort_day_1_7_pred_{i}'] = probabilities_15_21[:, i]
+        predict_index[f'prob_abort_day_15_21_pred_{i}'] = probabilities_15_21[:, i]
     
     # 输出预测统计信息
     logger.info("=== 预测结果统计 ===")
-    logger.info(f"1-7天任务预测类别分布:\n{predict_index['predicted_days_1_7'].value_counts()}")
-    logger.info(f"8-14天任务预测类别分布:\n{predict_index['predicted_days_8_14'].value_counts()}")
-    logger.info(f"15-21天任务预测类别分布:\n{predict_index['predicted_days_15_21'].value_counts()}")
+    logger.info(f"1-7天任务预测类别分布:\n{predict_index['abort_days_1_7'].value_counts()}")
+    logger.info(f"8-14天任务预测类别分布:\n{predict_index['abort_days_8_14'].value_counts()}")
+    logger.info(f"15-21天任务预测类别分布:\n{predict_index['abort_days_15_21'].value_counts()}")
     
     return predict_index
 
 if __name__ == "__main__":
     logger.info("开始数据加载和预处理...")
+    index_df = pd.read_csv(config.main_predict.PREDICT_INDEX_TABLE, encoding='utf-8-sig')
+    if index_df is None:
+        logger.error("索引数据加载失败，程序退出。")
+        exit()
+    logger.info(f"索引数据的列为：{index_df.columns}")
+    index_df['stats_dt'] = pd.to_datetime(index_df['stats_dt'], format='%Y-%m-%d', errors='coerce')
+
+    max_date = index_df['stats_dt'].max()
+    min_date = index_df['stats_dt'].min()
+    logger.info(f"索引数据的最小日期为：{min_date}, 最大日期为：{max_date}")
+    predict_running_dt = max_date + pd.Timedelta(days=1)  # 预测运行日期为最大日期的下一天
+    predict_interval = index_df['stats_dt'].nunique()  # 预测区间为索引数据的唯一日期数
+    logger.info(f"预测运行日期为：{predict_running_dt}, 预测区间为：{predict_interval}天")
+
     # 1. 加载和基础预处理数据
     # 生成特征
-    feature_generator = FeatureGenerator(running_dt=config.main_predict.PREDICT_RUNNING_DT, interval_days=config.main_predict.PREDICT_INTERVAL)
-    feature_df = feature_generator.generate_features()
-
-     # 生成lable
-    label_generator = LabelGenerator(
-        feature_data=feature_df,
-        running_dt=config.main_predict.PREDICT_RUNNING_DT,
-        interval_days=config.main_predict.PREDICT_INTERVAL,
+    feature_gen_main = FeatureGenerateMain(
+        running_dt=predict_running_dt.strftime('%Y-%m-%d'),
+        origin_feature_precompute_interval=predict_interval - 1,
+        logger=logger
     )
-    logger.info("开始生成标签...")
-    X, y = label_generator.days_period_generate_multi_task_alter()
-    X.reset_index(drop=True, inplace=True)
-    y.reset_index(drop=True, inplace=True)
-    predict_index_label = pd.concat([X, y], axis=1)
-    logger.info(f"预测数据的索引为：{predict_index_label.columns}")
+    feature_gen_main.generate_feature()  # 生成特征
+
+
+    connect_feature_obj = DaysPredictionFeatureDataset()
+    logger.info("----------Generating train dataset----------")
+    prdict_connect_feature_data = connect_feature_obj.build_train_dataset(input_dataset=index_df.copy(), param=None)
+
+    predict_connect_feature_data = prdict_connect_feature_data.reset_index(drop=True)
+    logger.info(f"预测特征数据的列为：{predict_connect_feature_data.columns}")
+
+    predict_index_label = index_df.copy()
+    predict_connect_feature_data.to_csv(
+        DataPathConfig.PREDICT_INDEX_MERGE_FEATURE_DATA_SAVE_PATH,
+        index=False,
+        encoding='utf-8-sig'
+    )
+
 
     # transform
-    if X is None:
+    if predict_connect_feature_data is None:
         logger.error("特征数据加载失败，程序退出。")
         exit()
 
+    index_merge_df = predict_connect_feature_data[ColumnsConfig.feature_columns]
     with open(config.TRANSFORMER_SAVE_PATH, "r+") as dump_file:
         transform = AbortionPredictionTransformPipeline.from_json(dump_file.read())
-    transformed_feature_df = transform.transform(input_dataset=X)
-    # transformer = FeatureTransformer(
-    #     discrete_cols=ColumnsConfig.DISCRETE_COLUMNS,
-    #     continuous_cols=ColumnsConfig.CONTINUOUS_COLUMNS,
-    #     invariant_cols=ColumnsConfig.INVARIANT_COLUMNS,
-    #     model_discrete_cols=ColumnsConfig.MODEL_DISCRETE_COLUMNS,
-    # )
-    # transformer = transformer.load_params(config.TRANSFORMER_SAVE_PATH)
-    # transform_dict = transformer.params
+    transformed_feature_df = transform.transform(input_dataset=index_merge_df)
 
-    # transformed_feature_df = transformer.transform(X.copy())
-    # transformed_feature_df.to_csv(
-    #     DataPathConfig.TRANSFORMED_FEATURE_DATA_SAVE_PATH,
-    #     index=False,
-    #     encoding='utf-8-sig'
-    # )
-    # logger.info(f"trainsformed_feature_df数据字段为：{transformed_feature_df.columns}")
-
-    # 保存离散特征类别数用于embedding
-    # discrete_class_num = transformer.discrete_column_class_count(transformed_feature_df)
-    # logger.info(f"离散特征的类别数量: {discrete_class_num}")
-
-    # 预测数据
     predict_X = transformed_feature_df.copy()
     predict_X = predict_X[ColumnsConfig.feature_columns]
-
-    periods = [(1, 7), (8, 14), (15, 21)]
-    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(start, end) for start, end in periods]
-    predict_y = y.copy()
-    predict_y = predict_y[days_label_list]
 
     # 生成mask列
     transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
     transformed_masked_null_predict_X.fillna(0, inplace=True)  # 填充空值为0
     logger.info(f"data_transformed_masked_null数据字段为：{transformed_masked_null_predict_X.columns}")
     
-    predict_df = pd.concat([transformed_masked_null_predict_X, predict_y], axis=1)
-    predict_df = predict_df.reset_index(drop=True)
-    logger.info(f"预测数据的索引为：{predict_df.columns}")
-    predict_df.to_csv(
+    transformed_masked_null_predict_X.to_csv(
         DataPathConfig.PREDICT_DATA_TRANSFORMED_MASK_NULL_PREDICT_PATH,
         index=False,
         encoding='utf-8-sig'
     )
 
-    # predict_index_df = predict_index_label[['stats_dt', 'pigfarm_dk', ColumnsConfig.HAS_RISK_LABEL]].reset_index(drop=True)
-
-    # train_X, train_y = create_sequences(train_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
-    # test_X, test_y = create_sequences(val_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
-    # logger.info(f"训练集X形状为：{train_X}")
-    # logger.info(f"训练集y形状为：{train_y}")
-    # logger.info("数据预处理完成.")
-
     # 5. 创建 PyTorch Dataset 和 DataLoader
-    predict_dataset = DaysDataset(predict_df, label=days_label_list)
+    predict_dataset = DaysPredictDataset(transformed_masked_null_predict_X)
 
     predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
     logger.info("数据加载器准备完毕.")
@@ -297,7 +272,6 @@ if __name__ == "__main__":
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
         'city': feature_dict[Categorical_feature[1]].category_encode.size,
-        'month': 12,
         'season': 4,
     }
     model = Days_NFM(params).to(config.DEVICE) # 等待模型实现

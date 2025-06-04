@@ -55,11 +55,11 @@ class Has_Risk_MLP(nn.Module):
         # 输出层
         input_size = total_feature_dim
         self.mlp = nn.Sequential(
-            nn.Linear(input_size, 16),
-            nn.BatchNorm1d(16),
+            nn.Linear(input_size, 64),
+            nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.Dropout(self.dropout),
-            nn.Linear(16, 4)
+            nn.Linear(16, 3)
         )
         
     

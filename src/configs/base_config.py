@@ -38,6 +38,8 @@ class FeatureData(Enum):
 
     INTRO_FEATURE_DATA = FEATURE_STORE_DIR / "intro_feature_data.csv"
 
+    SORROUNDING_FEATURE_DATA = FEATURE_STORE_DIR / "sorrounding_feature_data.csv"
+
     
 
 
@@ -71,10 +73,14 @@ class ModulePath(Enum):
          'file_type': 'csv',
          'main_class_name': 'DeathConfirmFeature',
          'params': {}},
-        # 引种特征
-        {'dataset_name': 'dataset.intro_feature',
+        # # 引种特征
+        # {'dataset_name': 'dataset.intro_feature',
+        #  'file_type': 'csv',
+        #  'main_class_name': 'IntroFeature',
+        #  'params': {}},
+        {'dataset_name': 'dataset.surrounding_pigfarmInfo_feature',
          'file_type': 'csv',
-         'main_class_name': 'IntroFeature',
+         'main_class_name': 'SurroundingPigfarmInfoFeature',
          'params': {}},
     ]
     # 训练模块

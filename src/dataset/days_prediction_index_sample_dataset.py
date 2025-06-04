@@ -10,7 +10,7 @@ from dataset.base_dataset import BaseDataSet
 from datetime import datetime, timedelta
 import configs.base_config as config
 from configs.base_config import FeatureData
-import configs.pigfarm_risk_prediction_config as risk_config
+import configs.pigfarm_days_prediction_config as days_config
 
 # 显示所有行
 pd.set_option('display.max_rows', None)
@@ -22,7 +22,7 @@ program = os.path.basename(sys.argv[0])
 logger = logging.getLogger(program)
 
 
-class RiskPredictionIndexSampleDataset(BaseDataSet):
+class DaysPredictionIndexSampleDataset(BaseDataSet):
 
     def __init__(self, **param):
         super().__init__(param)
@@ -189,8 +189,8 @@ class RiskPredictionIndexSampleDataset(BaseDataSet):
         logger.info("-----Postprocessing data----- ")
         self._postprocessing_train_data()
 
-        logger.info("-----Save as : {}".format(risk_config.algo_interim_dir / self.file_name))
-        self.dump_dataset(risk_config.algo_interim_dir / self.file_name)
+        logger.info("-----Save as : {}".format(days_config.algo_interim_dir / self.file_name))
+        self.dump_dataset(days_config.algo_interim_dir / self.file_name)
 
         return self.data
     def build_predict_dataset(self,predict_running_dt_end):

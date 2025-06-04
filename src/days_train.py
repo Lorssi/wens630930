@@ -31,6 +31,9 @@ from model.mlp import Has_Risk_MLP
 from model.nfm import Has_Risk_NFM
 from model.days_nfm import Days_NFM
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
+from dataset.days_prediction_index_sample_dataset import DaysPredictionIndexSampleDataset
+from dataset.days_prediction_feature_dataset import DaysPredictionFeatureDataset
+from module.future_generate_main import FeatureGenerateMain
 
 # 设置浮点数显示为小数点后2位，抑制科学计数法
 # np.set_printoptions(precision=2, suppress=True)
@@ -332,19 +335,28 @@ def eval(model, val_loader, criterion, device):
 
 if __name__ == "__main__":
     logger.info("开始数据加载和预处理...")
-    # 1. 加载和基础预处理数据
-    # 生成特征
-    feature_generator = FeatureGenerator(running_dt=config.TRAIN_RUNNING_DT, interval_days=config.TRAIN_INTERVAL)
-    feature_df = feature_generator.generate_features()
+    feature_gen_main = FeatureGenerateMain(
+        running_dt=config.TRAIN_RUNNING_DT,
+        origin_feature_precompute_interval=config.TRAIN_INTERVAL,
+        logger=logger
+    )
+    feature_gen_main.generate_feature()  # 生成特征
+
+    index_sample_obj = DaysPredictionIndexSampleDataset()
+    connect_feature_obj = DaysPredictionFeatureDataset()
+    logger.info('----------Create index sample---------')
+    train_index_data = index_sample_obj.build_train_dataset(config.TRAIN_RUNNING_DT, config.TRAIN_INTERVAL)
+    logger.info("----------Generating train dataset----------")
+    train_connect_feature_data = connect_feature_obj.build_train_dataset(input_dataset=train_index_data.copy(), param=None)
 
     # 生成lable
     label_generator = LabelGenerator(
-        feature_data=feature_df,
+        feature_data=train_connect_feature_data,
         running_dt=config.TRAIN_RUNNING_DT,
         interval_days=config.TRAIN_INTERVAL
     )
     logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_period_generate_multi_label_alter()
+    X, y = label_generator.has_risk_period_generate_multi_label_days_alter()
     logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
     logger.info(f"X,y特征数据形状为：{X.shape}， 标签数据形状为：{y.shape}")
     
@@ -352,28 +364,7 @@ if __name__ == "__main__":
     if X is None:
         logger.error("特征数据加载失败，程序退出。")
         exit()
-    # transformer = FeatureTransformer(
-    #     discrete_cols=ColumnsConfig.DISCRETE_COLUMNS,
-    #     continuous_cols=ColumnsConfig.CONTINUOUS_COLUMNS,
-    #     invariant_cols=ColumnsConfig.INVARIANT_COLUMNS,
-    #     model_discrete_cols=ColumnsConfig.MODEL_DISCRETE_COLUMNS,
-    #     offset=config.TRANSFORM_OFFSET,
-    # )
-
-    # transformed_feature_df = transformer.fit_transform(X.copy())
-    # transformed_feature_df.to_csv(
-    #     DataPathConfig.TRANSFORMED_FEATURE_DATA_SAVE_PATH,
-    #     index=False,
-    #     encoding='utf-8-sig'
-    # )
-    # logger.info(f"trainsformed_feature_df数据字段为：{transformed_feature_df.columns}")
-    # transform_dict = transformer.params
-    # logger.info(f"pigfarmdk类别数为：{len(transform_dict['discrete_mappings']['pigfarm_dk']['key2id'])}")
-    # 保存离散特征类别数用于embedding
-    # discrete_class_num = transformer.discrete_column_class_count(transformed_feature_df)
-    # logger.info(f"离散特征的类别数量: {discrete_class_num}")
-    # transformer.save_params(filepath=config.TRANSFORMER_SAVE_PATH)
-
+        
     train_X, val_X, train_y, val_y = split_data(X, y)
     # 重建索引，不然后面tranform会重建索引导致X与y在concat时不匹配
     train_X.reset_index(drop=True, inplace=True)

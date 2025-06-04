@@ -210,7 +210,8 @@ class IntroFeature(BaseFeatureDataSet):
 
 
     def _post_processing_data(self):
-        if self.data.isnull().any().any():
+        data = self.data.copy()
+        if data.isnull().any().any():
             logger.info("Warning: Null in org_feature_data.csv")
         self.file_name = "intro_feature_data." + self.file_type
 

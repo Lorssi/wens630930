@@ -19,6 +19,7 @@ from sklearn.model_selection import train_test_split
 # 从项目中导入模块
 from configs.logger_config import logger_config
 from configs.feature_config import ColumnsConfig, DataPathConfig
+from configs.pigfarm_risk_prediction_config import TrainModuleConfig, PredictModuleConfig, EvalModuleConfig, algo_interim_dir
 import config
 from dataset.dataset import HasRiskDataset, MultiTaskAndMultiLabelDataset, MultiTaskAndMultiLabelPredictDataset
 from utils.logger import setup_logger
@@ -263,6 +264,11 @@ if __name__ == "__main__":
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
     predict_df = predict_model(model, predict_loader, config.DEVICE, predict_index_label)
     predict_df = predict_df[ColumnsConfig.MAIN_PREDICT_TEST_WITH_INDEX_DATA_COLUMN]  # 只保留需要的列
+
+    feature_df = pd.read_csv(algo_interim_dir / "risk_train_connected_feature_data.csv", encoding='utf-8-sig')
+    feature_df = feature_df[['stats_dt'] + ColumnsConfig.feature_columns]
+    feature_df['stats_dt'] = pd.to_datetime(feature_df['stats_dt'], errors='coerce')
+    predict_df = predict_df.merge(feature_df, on=['pigfarm_dk', 'stats_dt'], how='left')
     # 保存预测结果
     save_to_csv(df=predict_df, filepath=config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH)
     logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")

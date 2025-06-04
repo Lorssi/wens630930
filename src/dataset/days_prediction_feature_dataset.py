@@ -7,7 +7,7 @@ import pandas as pd
 from pandas.core.interchange.dataframe_protocol import DataFrame
 
 import configs.base_config as base_config
-import configs.pigfarm_risk_prediction_config as risk_config
+import configs.pigfarm_days_prediction_config as days_config
 
 from dataset.base_dataset import BaseDataSet
 
@@ -21,7 +21,7 @@ program = os.path.basename(sys.argv[0])
 logger = logging.getLogger(program)
 
 
-class RiskPredictionFeatureDataset(BaseDataSet):
+class DaysPredictionFeatureDataset(BaseDataSet):
 
     def __init__(self, **param):
         super().__init__(param)
@@ -270,7 +270,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         self._get_sorrounding_feature()
         logger.info("-----Postprocessing Data-----")
         self._post_processing_train_data()
-        self.dump_dataset(risk_config.algo_interim_dir / self.file_name)
+        self.dump_dataset(days_config.algo_interim_dir / self.file_name)
         logger.info("-----Done----- ")
         return self.data
 

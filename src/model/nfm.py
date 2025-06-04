@@ -220,7 +220,8 @@ class Has_Risk_NFM_MultiLabel(nn.Module):
         self.mlp = make_mlp_layers(mlp_input_dim=EMBEDDING_SIZE, # 128
                                    hidden_dims=[128, 64, 32, 8],
                                 #    hidden_dims=[512, 128, 32, 8],
-                                   mlp_output_dim=3)
+                                   mlp_output_dim=3,
+                                   )
         
     
     def forward(self, x):

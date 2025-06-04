@@ -60,6 +60,30 @@ class DaysDataset(Dataset):
             
         return feature, labels
     
+class DaysPredictDataset(Dataset):
+    """
+    多任务数据集类，用于多任务学习模型训练
+    
+    Args:
+        features (numpy.ndarray): 特征序列数据，形状为 (样本数, 序列长度, 特征数)
+        labels (numpy.ndarray): 标签数据，形状为 (样本数,)
+        transform (callable, optional): 可选的数据转换函数
+    """
+    def __init__(self, df: pd.DataFrame):
+        self.df = df
+
+        
+    def __len__(self):
+        """返回数据集大小"""
+        return len(self.df)
+    
+    def __getitem__(self, idx):
+        """获取单个样本"""
+        row = self.df.iloc[idx]
+        feature = row.values
+            
+        return feature
+    
 class MultiTaskDataset(Dataset):
     """
     多任务数据集类，用于多任务学习模型训练

@@ -23,7 +23,7 @@ def load_josn_as_dict(input):
 
 def dataframe_dump(df: pd.DataFrame, path: str, file_type: str, index=True):
     if file_type == 'csv':
-        df.to_csv(path, index=index)
+        df.to_csv(path, index=False)
     elif file_type == 'parquet':
         df.to_parquet(path, index=index)
     elif file_type == 'pickle':

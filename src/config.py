@@ -19,8 +19,8 @@ TRANSFORM_OFFSET = 1
 
 # --- 训练相关配置 ---
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-BATCH_SIZE =512
-NUM_EPOCHS = 200
+BATCH_SIZE = 512
+NUM_EPOCHS = 10
 LEARNING_RATE = 0.001
 
 L2_REGULARIZATION = 1e-4 # L2 正则化系数

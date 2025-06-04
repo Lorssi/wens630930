@@ -54,33 +54,20 @@ def _collate_fn(batch):
     # 多标签任务（前三个标签）
     multi_label_list = []
     
-    # 多任务分类（后三个标签）
-    days_label_1_7_list = []
-    days_label_8_14_list = []
-    days_label_15_21_list = []
-    
     for feature, label in batch:
         # 添加特征
         features_list.append(feature)
         
         # 多标签任务（前三个）- 需要作为一个向量
-        multi_label = label[:3]  # 前三个标签
+        multi_label = label
         multi_label_list.append(multi_label)
-        
-        # 多任务分类（后三个）- 每个任务单独处理
-        days_label_1_7_list.append(label[3])  # 1-7天标签
-        days_label_8_14_list.append(label[4]) # 8-14天标签
-        days_label_15_21_list.append(label[5]) # 15-21天标签
     
     # 转换为张量
     features_tensor = torch.tensor(np.array(features_list), dtype=torch.float32)
     multi_label_tensor = torch.tensor(np.array(multi_label_list), dtype=torch.float32)  # 多标签用float
-    days_1_7_tensor = torch.tensor(np.array(days_label_1_7_list), dtype=torch.long)    # 分类标签用long
-    days_8_14_tensor = torch.tensor(np.array(days_label_8_14_list), dtype=torch.long)
-    days_15_21_tensor = torch.tensor(np.array(days_label_15_21_list), dtype=torch.long)
     
     # 返回特征和所有标签
-    return features_tensor, (multi_label_tensor, days_1_7_tensor, days_8_14_tensor, days_15_21_tensor)
+    return features_tensor, multi_label_tensor
 
     # 针对空值做处理
 def mask_feature_null(data = None, mode='train'):
@@ -116,18 +103,8 @@ def mask_feature_null(data = None, mode='train'):
     return data_transformed_Mask_Null
 
 def split_data(data_transformed_masked_null, y):
-    """
-    按日期百分比划分训练集和验证集
     
-    Args:
-        data (DataFrame): 包含日期列的数据
-        test_split_ratio (float): 验证集占比，默认0.2
-        
-    Returns:
-        tuple: (训练集数据, 验证集数据)
-    """
     periods = [(1, 7), (8, 14), (15, 21)]
-    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(left, right) for left, right in periods]
     has_risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
     # 确保日期列是datetime类型
     data_transformed_masked_null = data_transformed_masked_null.copy()
@@ -137,8 +114,8 @@ def split_data(data_transformed_masked_null, y):
 
     train_X = train_X[ColumnsConfig.feature_columns]
     test_X = test_X[ColumnsConfig.feature_columns]
-    train_y = train_y[has_risk_label_list + days_label_list]
-    test_y = test_y[has_risk_label_list + days_label_list]
+    train_y = train_y[has_risk_label_list]
+    test_y = test_y[has_risk_label_list]
 
     return train_X, test_X, train_y, test_y
 
@@ -192,14 +169,12 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         model.train()
         train_loss = 0.0
         for batch_idx, (features, targets) in enumerate(train_loader):
-            features = features.to(device)
-            multi_label_tensor, _, _, _ = targets
+            features, targets = features.to(device), targets.to(device)  # 将特征和标签移至目标设备
             # label
-            multi_label_tensor = multi_label_tensor.to(device)
 
             optimizer.zero_grad()
             outputs = model(features)
-            loss = criterion(outputs, multi_label_tensor)
+            loss = criterion(outputs, targets)
             loss.backward()
 
             optimizer.step()
@@ -257,13 +232,11 @@ def eval(model, val_loader, criterion, device):
     with torch.no_grad():
         for features, targets in val_loader:
             # 获取批次数据并移至目标设备
-            features = features.to(device)
-            multi_label_tensor, _, _, _ = targets  # 只取多标签部分
-            multi_label_tensor = multi_label_tensor.to(device)
+            features, targets = features.to(device), targets.to(device)  # 将特征和标签移至目标设备
             
             # 前向传播
             outputs = model(features)
-            loss = criterion(outputs, multi_label_tensor)
+            loss = criterion(outputs, targets)
             val_loss += loss.item()
             
             # 获取预测结果 - 使用sigmoid而非softmax
@@ -272,7 +245,7 @@ def eval(model, val_loader, criterion, device):
             
             # 收集结果
             all_preds.append(preds.cpu().numpy())
-            all_targets.append(multi_label_tensor.cpu().numpy())
+            all_targets.append(targets.cpu().numpy())
             all_probs.append(probs.cpu().numpy())
     
     # 计算平均损失
@@ -342,7 +315,7 @@ if __name__ == "__main__":
         interval_days=config.TRAIN_INTERVAL
     )
     logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_period_generate_multi_label_alter()
+    X, y = label_generator.has_risk_period_generate_multi_label_alter_nodays()
     logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
     logger.info(f"X,y特征数据形状为：{X.shape}， 标签数据形状为：{y.shape}")
     
@@ -416,10 +389,9 @@ if __name__ == "__main__":
 
     # 5. 创建 PyTorch Dataset 和 DataLoader
     periods = [(1, 7), (8, 14), (15, 21)]
-    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(left, right) for left, right in periods]
     has_risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
-    train_dataset = MultiTaskAndMultiLabelDataset(train_df, label=has_risk_label_list + days_label_list)
-    val_dataset = MultiTaskAndMultiLabelDataset(val_df, label=has_risk_label_list + days_label_list)
+    train_dataset = MultiTaskAndMultiLabelDataset(train_df, label=has_risk_label_list)
+    val_dataset = MultiTaskAndMultiLabelDataset(val_df, label=has_risk_label_list)
 
     train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
     val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS)
