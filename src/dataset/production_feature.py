@@ -388,6 +388,23 @@ class ProductionFeature(BaseFeatureDataSet):
         self.data = data.copy()
         logger.info("基础母猪特征计算完成")
 
+    def _get_7d_abortion_feature(self):
+        """
+        计算近7天流产率特征:
+        1. abortion_mean_recent_7d: 近7天流产率均值
+        """
+        data = self.data.copy()
+        
+        # 计算未来1-7天的流产率作为特征
+        for day in range(0, 7):
+            # 使用shift的负值获取未来数据
+            feature_name = f'abortion_rate_past_{day + 1}d'
+            data[feature_name] = data.groupby('pigfarm_dk')['abortion_rate'].shift(day)
+        
+        self.data = data.copy()
+        logger.info("过去7天流产率特征计算完成")
+
+
     def _post_processing_data(self):
         data = self.data.copy()
 
@@ -395,13 +412,16 @@ class ProductionFeature(BaseFeatureDataSet):
             logger.info("Warning: Null in production_feature_data.csv")
         self.file_name = "production_feature_data." + self.file_type
 
+        past_7d_abortion_features = [f'abortion_rate_past_{day + 1}d' for day in range(7)]
         production_feature_list = ['stats_dt', 'pigfarm_dk', 'abortion_rate','abortion_mean_recent_7d',
                                    'abortion_mean_recent_14d', 'abortion_mean_recent_21d',
                                    'boar_transin_times_30d', 'boar_transin_qty_30d',
                                    'boar_transin_ratio_30d_1', 'boar_transin_ratio_30d_2',
                                    'preg_stock_sqty_change_ratio_7d', 'preg_stock_sqty_change_ratio_15d','preg_stock_sqty',
                                    'reserve_sow_sqty_change_ratio_7d', 'reserve_sow_sqty_change_ratio_15d','reserve_sow_sqty',
-                                   'basesow_sqty_change_ratio_7d', 'basesow_sqty_change_ratio_15d','basesow_sqty']
+                                   'basesow_sqty_change_ratio_7d', 'basesow_sqty_change_ratio_15d','basesow_sqty',
+                                   ] + past_7d_abortion_features
+        
         data = data[production_feature_list]
         self.data = data.copy()
 
@@ -421,6 +441,8 @@ class ProductionFeature(BaseFeatureDataSet):
         self._get_reserve_sow_feature()
         logger.info("-----get basesow feature-----")
         self._get_basesow_feature()
+        logger.info("-----get past abortion feature-----")
+        self._get_7d_abortion_feature()
         logger.info("-----Postprocessing data----- ")
         self._post_processing_data()
         # logger.info("-----Save as : {}".format("/".join([config.FEATURE_STORE_ROOT, self.file_name])))

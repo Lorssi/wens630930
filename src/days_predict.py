@@ -279,8 +279,13 @@ if __name__ == "__main__":
     logger.info(f"模型结构:\n{model}")
 
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
-    predict_df = predict_model(model, predict_loader, config.DEVICE, predict_index_label)
+    predict_df = predict_model(model, predict_loader, config.DEVICE, transformed_feature_df)
+
 
     # 保存预测结果
+    predict_df = predict_df.rename(columns={
+        'pigfarm_dk': 'pigfarm_dk_transfrom',
+    })
+    predict_df = pd.concat([predict_index_label.reset_index(drop=True), predict_df.reset_index(drop=True)], axis=1)
     save_to_csv(df=predict_df, filepath=config.main_predict.DAYS_PREDICT_RESULT_SAVE_PATH)
     logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")
