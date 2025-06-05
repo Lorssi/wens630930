@@ -57,27 +57,31 @@ class DataPathConfig:
         return path
 
 class ColumnsConfig:
+    past_7d_abortion_features = [f'abortion_rate_past_{day + 1}d' for day in range(7)]
+    # TRANSFORM_FIT
+    DISCRETE_COLUMNS = ['pigfarm_dk','city']
+    CONTINUOUS_COLUMNS = ['check_out_ratio_7d', 'death_confirm_2_week', 'abortion_mean_recent_21d']
+    INVARIANT_COLUMNS = ['season']
+
+    # MODEL_FIT
+    MODEL_DISCRETE_COLUMNS = ['pigfarm_dk','city','season']
+    MODEL_CONTINUOUS_COLUMNS = ['check_out_ratio_7d', 'death_confirm_2_week', 'abortion_mean_recent_21d']
+
+
     INDEX_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abortion_rate']
+    
     MAIN_PREDICT_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abort_1_7', 'abort_8_14', 'abort_15_21', 'abort_1_7_pred', 'abort_8_14_pred', 'abort_15_21_pred',
                                 'abort_1_7_decision', 'abort_8_14_decision', 'abort_15_21_decision',
                                 'abort_1_7_threshold', 'abort_8_14_threshold', 'abort_15_21_threshold']
-    MAIN_PREDICT_TEST_WITH_INDEX_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abort_1_7_pred', 'abort_8_14_pred', 'abort_15_21_pred',
+    
+    MAIN_PREDICT_TEST_WITH_INDEX_DATA_COLUMN = ['abort_1_7_pred', 'abort_8_14_pred', 'abort_15_21_pred',
                                 'abort_1_7_decision', 'abort_8_14_decision', 'abort_15_21_decision',
-                                'abort_1_7_threshold', 'abort_8_14_threshold', 'abort_15_21_threshold']
+                                'abort_1_7_threshold', 'abort_8_14_threshold', 'abort_15_21_threshold'] + MODEL_DISCRETE_COLUMNS + MODEL_CONTINUOUS_COLUMNS
     
     DAYS_PREDICT_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'days_1_7', 'days_8_14', 'days_15_21', 'abort_day_1_7_pred', 'abort_day_8_14_pred', 'abort_day_15_21_pred',
                                 'days_1_7_decision', 'days_8_14_decision', 'days_15_21_decision',
                                 'days_1_7_threshold', 'days_8_14_threshold', 'days_15_21_threshold']
 
-    # TRANSFORM_FIT
-    DISCRETE_COLUMNS = ['pigfarm_dk','city']
-    CONTINUOUS_COLUMNS = ['abortion_rate_1_7','check_out_ratio_7d', 'death_confirm_2_week','l3_abortion_mean_7d']
-    INVARIANT_COLUMNS = ['season']
-
-    # MODEL_FIT
-    MODEL_DISCRETE_COLUMNS = ['pigfarm_dk','city','season']
-    MODEL_CONTINUOUS_COLUMNS = ['abortion_rate_1_7', 'check_out_ratio_7d', 'death_confirm_2_week', 'l3_abortion_mean_7d']
-    MODEL_DIRECT_COLUMNS = []
 
     # COLUMNS
     feature_columns = MODEL_DISCRETE_COLUMNS + MODEL_CONTINUOUS_COLUMNS
