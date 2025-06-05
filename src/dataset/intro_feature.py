@@ -39,6 +39,7 @@ class IntroFeature(BaseFeatureDataSet):
         self.intro_data = pd.read_csv(RawData.W01_AST_BOAR.value, encoding='utf-8-sig')
         self.tame_data = pd.read_csv(RawData.TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2.value, encoding='utf-8-sig', low_memory=False)
         self.index_data = pd.read_csv(RawData.ADS_PIG_ORG_TOTAL_TO_ML_TRAINING_DAY.value, encoding='utf-8-sig')
+        self.intro_batch_data = pd.read_csv(RawData.ADS_PIG_ISOLATION_TAME_PROLINE_RISK.value, encoding='utf-8-sig', low_memory=False)
 
         self.running_dt_end = running_dt_end
         self.train_interval = train_interval
@@ -52,7 +53,7 @@ class IntroFeature(BaseFeatureDataSet):
         self.data = pd.DataFrame()
         self.file_name = None
 
-        self.feature_columns = ['intro_source_num_90d', 'intro_source_is_single', 'intro_times_30d', 'intro_times_90d', 'intro_days_30d', 'intro_days_90d']
+        self.feature_columns = ['intro_source_num_90d', 'intro_source_is_single', 'intro_times_30d', 'intro_times_90d', 'intro_days_30d', 'intro_days_90d', 'intro_batch_num_30d', 'intro_batch_num_90d']
 
         self._init_entity_and_features()
 
@@ -60,17 +61,20 @@ class IntroFeature(BaseFeatureDataSet):
         intro_data = self.intro_data.copy()
         tame_data = self.tame_data.copy()
         index_data = self.index_data.copy()
+        intro_batch_data = self.intro_batch_data.copy()
 
         tame_data.rename(columns={'tmp_ads_pig_isolation_tame_risk_l1_n2.org_inv_dk': 'org_inv_dk', 'tmp_ads_pig_isolation_tame_risk_l1_n2.bill_dt': 'bill_dt'}, inplace=True)
         index_data = index_data[['stats_dt', 'pigfarm_dk']]
         intro_data['intro_dt'] = pd.to_datetime(intro_data['intro_dt'])
         tame_data['bill_dt'] = pd.to_datetime(tame_data['bill_dt'])
         index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        intro_batch_data['allot_dt'] = pd.to_datetime(intro_batch_data['allot_dt'])
 
         # 过滤日期范围，减少数据大小
         intro_data = intro_data[(intro_data['intro_dt'] >= self.start_date) & (intro_data['intro_dt'] <= self.end_date)]
         tame_data = tame_data[(tame_data['bill_dt'] >= self.start_date) & (tame_data['bill_dt'] <= self.end_date)]
         index_data = index_data[(index_data['stats_dt'] >= self.start_date) & (index_data['stats_dt'] <= self.end_date)]
+        intro_batch_data = intro_batch_data[(intro_batch_data['allot_dt'] >= self.start_date) & (intro_batch_data['allot_dt'] <= self.end_date)]
 
         # 把来源猪场的空值由供应商名字填充
         intro_data['cffromhogp_nm'] = intro_data['cffromhogp_nm'].fillna(intro_data['vendor_nm'])
@@ -82,6 +86,7 @@ class IntroFeature(BaseFeatureDataSet):
         # 排序，用于加快计算速度
         tame_data.sort_values(['bill_dt', 'org_inv_dk'], inplace=True)
         index_data.sort_values(['stats_dt', 'pigfarm_dk'], inplace=True)
+        intro_batch_data.sort_values(['allot_dt', 'prorg_inv_dk'], inplace=True)
 
 
         
@@ -89,6 +94,7 @@ class IntroFeature(BaseFeatureDataSet):
         self.intro_data = intro_data
         self.tame_data = tame_data
         self.index_data = index_data
+        self.intro_batch_data = intro_batch_data
 
     def _init_entity_and_features(self):
         """初始化实体和特征定义"""
@@ -101,6 +107,8 @@ class IntroFeature(BaseFeatureDataSet):
             ('intro_source_num_90d', FeatureType.Continuous, FeatureDtype.Int32, 'intro'),
             ('intro_times_30d', FeatureType.Continuous, FeatureDtype.Int32, 'intro'),
             ('intro_times_90d', FeatureType.Continuous, FeatureDtype.Int32, 'intro'),
+            ('intro_batch_num_30d', FeatureType.Continuous, FeatureDtype.Int32, 'intro'),
+            ('intro_batch_num_90d', FeatureType.Continuous, FeatureDtype.Int32, 'intro'),
             # 入群特征
             ('boar_tame_num_30d', FeatureType.Categorical, FeatureDtype.String, 'tame'),
         ]
@@ -123,6 +131,7 @@ class IntroFeature(BaseFeatureDataSet):
         """
         intro_data = self.intro_data.copy()
         index_data = self.index_data.copy()
+        intro_batch_data = self.intro_batch_data.copy()
                 
         # 获取所有需要计算特征的日期（T+1模式）
         all_stats_dates = sorted(index_data['stats_dt'].unique())
@@ -141,10 +150,13 @@ class IntroFeature(BaseFeatureDataSet):
         for farm_id in tqdm(farm_ids, desc="计算猪场特征"):
             # 筛选该猪场的所有引种记录
             farm_intro = intro_data[intro_data['org_inv_dk'] == farm_id]
-            
-            has_intro = not farm_intro.empty
+            # 筛选该猪场的所有引种批次记录
+            farm_batch_intro = intro_batch_data[intro_batch_data['prorg_inv_dk'] == farm_id]
 
-            if not has_intro:
+            has_intro = not farm_intro.empty
+            has_batch_intro = not farm_batch_intro.empty
+
+            if not has_intro and not has_batch_intro:
                 continue
         
             # 为这个猪场创建一个日期字典
@@ -160,6 +172,8 @@ class IntroFeature(BaseFeatureDataSet):
                     'intro_times_30d': np.nan,
                     'intro_days_30d': np.nan,
                     'intro_days_90d': np.nan,
+                    'intro_batch_num_30d': np.nan,
+                    'intro_batch_num_90d': np.nan,
                 }
                 
                 # 计算引种特征
@@ -185,6 +199,30 @@ class IntroFeature(BaseFeatureDataSet):
                             'intro_times_30d': mask_30d.sum(),   # 直接对掩码求和获取行数
                             'intro_days_30d': intro_days_30d,
                             'intro_days_90d': intro_days_90d
+                        })
+                
+                # 计算批次引种特征
+                if has_batch_intro:
+                    # 创建90天和30天的过滤条件
+                    batch_mask_90d = (farm_batch_intro['allot_dt'] <= date) & (farm_batch_intro['allot_dt'] >= date - pd.Timedelta(days=90))
+                    batch_mask_30d = (farm_batch_intro['allot_dt'] <= date) & (farm_batch_intro['allot_dt'] >= date - pd.Timedelta(days=30))
+
+                    # 计算批次数量
+                    if batch_mask_90d.any():
+                        # 获取90天内符合条件的数据
+                        batch_data_90d = farm_batch_intro.loc[batch_mask_90d, ['allot_dt', 'prorg_inv_dk', 'source_org_dk', 'source_kind', 'rearer_pop_dk']]
+                        # 去重计算90天内批次数
+                        intro_batch_num_90d = batch_data_90d.drop_duplicates().shape[0]
+                        
+                        # 获取30天内符合条件的数据
+                        batch_data_30d = farm_batch_intro.loc[batch_mask_30d, ['allot_dt', 'prorg_inv_dk', 'source_org_dk', 'source_kind', 'rearer_pop_dk']]
+                        # 去重计算30天内批次数
+                        intro_batch_num_30d = batch_data_30d.drop_duplicates().shape[0]
+                        
+                        # 更新特征值
+                        feature_dict.update({
+                            'intro_batch_num_90d': intro_batch_num_90d,
+                            'intro_batch_num_30d': intro_batch_num_30d
                         })
                     
                 farm_dict[date] = feature_dict
