@@ -427,6 +427,7 @@ if __name__ == "__main__":
 
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
     trained_model = train_model(model, train_loader, val_loader, criterion, optimizer, config.NUM_EPOCHS, config.DEVICE, early_stopping=early_stopping)
+    
 
     # --- 模型评估 (可选，在测试集上) ---
     # ...
