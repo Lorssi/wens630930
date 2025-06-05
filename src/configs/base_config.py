@@ -23,6 +23,7 @@ class RawData(Enum):
     # 引种数据
     W01_AST_BOAR = RAW_DATA_DIR / "W01_AST_BOAR.csv"
     TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2 = RAW_DATA_DIR / "TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2.csv"
+    ADS_PIG_ISOLATION_TAME_PROLINE_RISK = RAW_DATA_DIR / "ADS_PIG_ISOLATION_TAME_PROLINE_RISK.csv"
 
 class FeatureData(Enum):
 
@@ -73,11 +74,11 @@ class ModulePath(Enum):
          'file_type': 'csv',
          'main_class_name': 'DeathConfirmFeature',
          'params': {}},
-        # # 引种特征
-        # {'dataset_name': 'dataset.intro_feature',
-        #  'file_type': 'csv',
-        #  'main_class_name': 'IntroFeature',
-        #  'params': {}},
+        # 引种特征
+        {'dataset_name': 'dataset.intro_feature',
+         'file_type': 'csv',
+         'main_class_name': 'IntroFeature',
+         'params': {}},
         {'dataset_name': 'dataset.surrounding_pigfarmInfo_feature',
          'file_type': 'csv',
          'main_class_name': 'SurroundingPigfarmInfoFeature',
