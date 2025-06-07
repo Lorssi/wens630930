@@ -153,6 +153,11 @@ class DeathConfirmFeature(BaseFeatureDataSet):
             logger.info("Warning: Null in death_confirm_feature_data.csv")
         self.file_name = "death_confirm_feature_data." + self.file_type
 
+        data = self.data.copy()
+        
+        data['stats_dt'] = data['stats_dt'] + pd.DateOffset(days=1)  # 确保日期是正确的
+        self.data = data.copy()
+
     def build_dataset_all(self):
         logger.info("-----Preprocessing data----- ")
         self._preprocessing_data()

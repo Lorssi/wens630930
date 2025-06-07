@@ -32,6 +32,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         self.date_feature_data = pd.read_csv(base_config.FeatureData.DATE_FEATURE_DATA.value)
         self.intro_feature_data = pd.read_csv(base_config.FeatureData.INTRO_FEATURE_DATA.value)
         self.sorrounding_feature_data = pd.read_csv(base_config.FeatureData.SORROUNDING_FEATURE_DATA.value)
+        self.rule_baseline_feature_data = pd.read_csv(base_config.FeatureData.RULE_BASELINE_FEATURE_DATA.value)
 
         self.file_name = None  # 文件名
         self.index_data = pd.DataFrame()  # 索引数据
@@ -45,7 +46,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         index_data = input_dataset
         index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
 
-        self.index_data = index_data
+        self.index_data = index_data.copy()
 
     def _get_production_feature(self):
         """
@@ -60,9 +61,8 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         # 转换日期类型和其他数据类型
         index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
         production_feature_data['stats_dt'] = pd.to_datetime(production_feature_data['stats_dt'])
-        index_data['pigfarm_dk'] = index_data['pigfarm_dk'].astype(str)
 
-        production_feature_data['stats_dt'] = production_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
+        # production_feature_data['stats_dt'] = production_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
         index_data = pd.merge(
             index_data,
             production_feature_data,
@@ -135,9 +135,8 @@ class RiskPredictionFeatureDataset(BaseDataSet):
        # 转换日期类型和其他数据类型
         index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
         check_feature_data['stats_dt'] = pd.to_datetime(check_feature_data['stats_dt'])
-        index_data['pigfarm_dk'] = index_data['pigfarm_dk'].astype(str)
 
-        check_feature_data['stats_dt'] = check_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
+        # check_feature_data['stats_dt'] = check_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
         index_data = pd.merge(
             index_data,
             check_feature_data,
@@ -160,9 +159,8 @@ class RiskPredictionFeatureDataset(BaseDataSet):
        # 转换日期类型和其他数据类型
         index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
         death_confirm_feature_data['stats_dt'] = pd.to_datetime(death_confirm_feature_data['stats_dt'])
-        index_data['pigfarm_dk'] = index_data['pigfarm_dk'].astype(str)
 
-        death_confirm_feature_data['stats_dt'] = death_confirm_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
+        # death_confirm_feature_data['stats_dt'] = death_confirm_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
         index_data = pd.merge(
             index_data,
             death_confirm_feature_data,
@@ -186,9 +184,8 @@ class RiskPredictionFeatureDataset(BaseDataSet):
        # 转换日期类型和其他数据类型
         index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
         intro_feature_data['stats_dt'] = pd.to_datetime(intro_feature_data['stats_dt'])
-        index_data['pigfarm_dk'] = index_data['pigfarm_dk'].astype(str)
 
-        intro_feature_data['stats_dt'] = intro_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
+        # intro_feature_data['stats_dt'] = intro_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
         index_data = pd.merge(
             index_data,
             intro_feature_data,
@@ -214,7 +211,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         sorrounding_feature_data['stats_dt'] = pd.to_datetime(sorrounding_feature_data['stats_dt'])
         index_data['pigfarm_dk'] = index_data['pigfarm_dk'].astype(str)
 
-        sorrounding_feature_data['stats_dt'] = sorrounding_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
+        # sorrounding_feature_data['stats_dt'] = sorrounding_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
         index_data = pd.merge(
             index_data,
             sorrounding_feature_data,
@@ -224,11 +221,31 @@ class RiskPredictionFeatureDataset(BaseDataSet):
 
         self.index_data = index_data.copy()
 
+    def _get_rule_baseline_feature(self):
+        """
+        使用merge和向量化操作获取mean_prop特征，避免逐行处理
+        """
+        logger.info("获取rule baseline特征...")
+
+        # 复制数据并确保类型正确
+        index_data = self.index_data.copy()
+        rule_baseline_feature_data = self.rule_baseline_feature_data.copy()
+
+       # 转换日期类型和其他数据类型
+        index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        rule_baseline_feature_data['stats_dt'] = pd.to_datetime(rule_baseline_feature_data['stats_dt'])
+
+        # rule_baseline_feature_data['stats_dt'] = rule_baseline_feature_data['stats_dt'] + pd.DateOffset(days=1)
+        index_data = pd.merge(
+            index_data,
+            rule_baseline_feature_data,
+            on=['stats_dt', 'pigfarm_dk'],
+            how='left'
+        )
+        self.index_data = index_data.copy()
+
     def _post_processing_train_data(self):
         index_data = self.index_data.copy()
-        production_feature_data = self.production_feature_data.copy()
-
-        index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
 
         # 统计各字段nan值
         null_counts = index_data.isnull().sum()
@@ -236,7 +253,8 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         logger.info("-----Processed Dataset Size：{}".format(len(index_data)))
 
         self.file_name = "risk_train_connected_feature_data.csv"
-        self.data = index_data
+
+        self.data = index_data.copy()
 
     def _post_processing_predict_data(self):
         index_data = self.index_data.copy()
@@ -246,7 +264,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         logger.info("-----Processed Dataset Size：{}".format(len(index_data)))
 
         self.file_name = "test_connected_feature_data.csv"
-        self.data = index_data
+        self.data = index_data.copy()
         
 
     def build_train_dataset(self, input_dataset: pd.DataFrame, **param):
@@ -267,7 +285,9 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         logger.info("-----Connecting feature: intro_data")
         # self._get_intro_feature()
         logger.info("-----Connecting feature: Sorrounding fea")
-        self._get_sorrounding_feature()
+        # self._get_sorrounding_feature()
+        logger.info("-----Connecting feature: rule baseline fea")
+        self._get_rule_baseline_feature()
         logger.info("-----Postprocessing Data-----")
         self._post_processing_train_data()
         self.dump_dataset(risk_config.algo_interim_dir / self.file_name)

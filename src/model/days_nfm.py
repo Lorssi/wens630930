@@ -37,13 +37,11 @@ def make_mlp_layers(mlp_input_dim, hidden_dims, mlp_output_dim, activate_func='r
 class TaskHead_Days(nn.Module):
     def __init__(self, input_dim=64, output_dim=8):
         super().__init__()
-        self.head_1_7 = nn.Linear(input_dim, output_dim)  # 任务特定层
-        self.head_8_14 = nn.Linear(input_dim, output_dim)  # 任务特定层
-        self.head_15_21 = nn.Linear(input_dim, output_dim)  # 任务特定层
+        self.head = nn.Linear(input_dim, output_dim)  # 任务特定层
     
     def forward(self, x):
 
-        return self.head_1_7(x), self.head_8_14(x), self.head_15_21(x)
+        return self.head(x)
 
 class FeatureInteraction(nn.Module):
 
@@ -116,7 +114,9 @@ class Days_NFM(nn.Module):
                                    mlp_output_dim=16)
 
         # self.task_head_has_risk = TaskHead_HasRisk(input_dim=16, output_dim=3)
-        self.task_head_days = TaskHead_Days(input_dim=16, output_dim=8)
+        self.task_head_days_1_7 = TaskHead_Days(input_dim=16, output_dim=8)
+        self.task_head_days_8_14 = TaskHead_Days(input_dim=16, output_dim=8)
+        self.task_head_days_15_21 = TaskHead_Days(input_dim=16, output_dim=8)
         
     
     def forward(self, x):
@@ -184,6 +184,8 @@ class Days_NFM(nn.Module):
 
         output = F.relu(output)
 
-        days_1_7_output, days_8_14_output, days_15_21_output = self.task_head_days(output)
+        days_1_7_output = self.task_head_days_1_7(output)
+        days_8_14_output = self.task_head_days_8_14(output)
+        days_15_21_output = self.task_head_days_15_21(output)
         
         return days_1_7_output, days_8_14_output, days_15_21_output

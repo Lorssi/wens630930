@@ -202,7 +202,8 @@ class PrrsCheckFeature(BaseFeatureDataSet):
             # 如果没有结果数据，添加默认列
             production_data['check_out_ratio_7d'] = np.nan
             production_data['wild_check_out_ratio_7d'] = np.nan
-            self.data = production_data
+            self.data = production_data.copy()
+            return
         
         # 为check_data添加标记，标识是否为野毒数据
         # 条件1: check_item_dk在wild_check_items中
@@ -275,19 +276,25 @@ class PrrsCheckFeature(BaseFeatureDataSet):
             # 填充空值
             production_data['check_out_ratio_7d'] = production_data['prrs_7d_positive_rate']
             production_data['wild_check_out_ratio_7d'] = production_data['prrs_wild_7d_positive_rate']
+            self.data = production_data[['stats_dt', 'pigfarm_dk', 'check_out_ratio_7d', 'wild_check_out_ratio_7d']].copy()
         else:
             # 如果没有结果数据，添加默认列
             production_data['check_out_ratio_7d'] = np.nan
             production_data['wild_check_out_ratio_7d'] = np.nan
 
-        self.data = pd.concat([self.data, production_data[['stats_dt', 'pigfarm_dk', 'check_out_ratio_7d', 'wild_check_out_ratio_7d']]], axis=1)
+            self.data = production_data[['stats_dt', 'pigfarm_dk', 'check_out_ratio_7d', 'wild_check_out_ratio_7d']].copy()
         
         logger.info(f"计算完成PRRS 7天阳性率和野毒阳性率，总数据量: {len(self.data)}")
 
     def _post_processing_data(self):
         if self.data.isnull().any().any():
             logger.info("Warning: Null in check_feature_data.csv")
-        self.file_name = "date_feature_data." + self.file_type
+        self.file_name = "check_feature_data." + self.file_type
+
+        data = self.data.copy()
+        data['stats_dt'] = pd.to_datetime(data['stats_dt'])
+        data['stats_dt'] = data['stats_dt'] + pd.DateOffset(days=1)
+        self.data = data.copy()
 
     def build_dataset_all(self):
         logger.info("-----Preprocessing data----- ")

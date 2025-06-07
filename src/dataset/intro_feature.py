@@ -253,6 +253,11 @@ class IntroFeature(BaseFeatureDataSet):
             logger.info("Warning: Null in org_feature_data.csv")
         self.file_name = "intro_feature_data." + self.file_type
 
+        data['stats_dt'] = pd.to_datetime(data['stats_dt'])
+        data['stats_dt'] = data['stats_dt'] + pd.DateOffset(days=1)  # 确保日期是正确的
+        self.data = data.copy()
+
+
     def build_dataset_all(self):
         logger.info("-----Preprocessing data----- ")
         self._preprocessing_data()

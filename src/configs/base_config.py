@@ -25,6 +25,8 @@ class RawData(Enum):
     TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2 = RAW_DATA_DIR / "TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2.csv"
     ADS_PIG_ISOLATION_TAME_PROLINE_RISK = RAW_DATA_DIR / "ADS_PIG_ISOLATION_TAME_PROLINE_RISK.csv"
 
+    PIG_LET_DATA = RAW_DATA_DIR / "ads_pig_efficient_piglet_batch_analysis_day.csv"
+
 class FeatureData(Enum):
 
     PRODUCTION_FEATURE_DATA = FEATURE_STORE_DIR / "production_feature_data.csv"
@@ -40,6 +42,8 @@ class FeatureData(Enum):
     INTRO_FEATURE_DATA = FEATURE_STORE_DIR / "intro_feature_data.csv"
 
     SORROUNDING_FEATURE_DATA = FEATURE_STORE_DIR / "sorrounding_feature_data.csv"
+
+    RULE_BASELINE_FEATURE_DATA = FEATURE_STORE_DIR / "rule_baseline_feature_data.csv"
 
     
 
@@ -74,14 +78,18 @@ class ModulePath(Enum):
          'file_type': 'csv',
          'main_class_name': 'DeathConfirmFeature',
          'params': {}},
-        # 引种特征
-        {'dataset_name': 'dataset.intro_feature',
+        # # 引种特征
+        # {'dataset_name': 'dataset.intro_feature',
+        #  'file_type': 'csv',
+        #  'main_class_name': 'IntroFeature',
+        #  'params': {}},
+        # {'dataset_name': 'dataset.surrounding_pigfarmInfo_feature',
+        #  'file_type': 'csv',
+        #  'main_class_name': 'SurroundingPigfarmInfoFeature',
+        #  'params': {}},
+        {'dataset_name': 'dataset.rule_baseline_feature',
          'file_type': 'csv',
-         'main_class_name': 'IntroFeature',
-         'params': {}},
-        {'dataset_name': 'dataset.surrounding_pigfarmInfo_feature',
-         'file_type': 'csv',
-         'main_class_name': 'SurroundingPigfarmInfoFeature',
+         'main_class_name': 'RulBaselineFeature',
          'params': {}},
     ]
     # 训练模块

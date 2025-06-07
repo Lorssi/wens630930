@@ -27,6 +27,7 @@ class LabelGenerator:
             logger.info(f"成功加载数据: {FeatureData.PRODUCTION_FEATURE_DATA.value}, 数据行数: {len(df)}")
 
             df[self.date_column] = pd.to_datetime(df[self.date_column])  # 转换为 datetime 格式
+            df[self.date_column] = df[self.date_column] - pd.DateOffset(days=1)
             df = df.dropna(subset=['abortion_rate'])  # 删除缺失值行
             df = df[[self.date_column, self.id_column, 'abortion_rate']]  # 只保留需要的列
 

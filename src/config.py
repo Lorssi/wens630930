@@ -8,12 +8,12 @@ MODELS_DIR = ROOT_DIR / "models"
 
 # --- 日期 ---
 TRAIN_RUNNING_DT = "2024-12-1" # 运行日期 (用于数据切分)
-TRAIN_INTERVAL = 100 # 训练数据的时间间隔 (单位：天)
+TRAIN_INTERVAL = 400 # 训练数据的时间间隔 (单位：天)
 
 # --- 数据相关配置 ---
-VALIDATION_SPLIT_RATIO = 0.2 # 验证集占总猪场数据的比例 (按猪场ID划分时)
+VALIDATION_SPLIT_RATIO = 0.075 # 验证集占总猪场数据的比例 (按猪场ID划分时)
 # 或者 VALIDATION_CUTOFF_DATE = '2022-01-01' # 按时间划分验证集
-TEST_SPLIT_RATIO = 0.2 # 测试集比例 (如果需要的话)
+TEST_SPLIT_RATIO = 0.075 # 测试集比例 (如果需要的话)
 
 TRANSFORM_OFFSET = 1
 
@@ -29,7 +29,7 @@ L2_REGULARIZATION = 1e-4 # L2 正则化系数
 DROPOUT = 0.2
 
 EMBEDDING_SIZE = 128 # 嵌入层大小 (如果使用嵌入层)
-NUM_WORKERS = 0
+NUM_WORKERS = 16
 
 # --- 其他配置 ---
 MODEL_SAVE_PATH = MODELS_DIR / "model.pth" # 模型保存路径
@@ -48,4 +48,5 @@ class main_predict:
     DAYS_PREDICT_RESULT_SAVE_PATH = PREDICT_DATA_DIR / "abort_abnormal_day.csv"
 
     PREDICT_INDEX_TABLE = PREDICT_DATA_DIR / "index_sample_20241201.csv"
+    DAYS_PREDICT_INDEX_TABLE = PREDICT_DATA_DIR / "index_sample_days_20241201.csv"
 

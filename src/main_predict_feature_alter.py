@@ -29,7 +29,7 @@ from feature.gen_feature import FeatureGenerator
 from feature.gen_label import LabelGenerator
 from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
-from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel
+from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel, Has_Risk_NFM_MultiLabel_7d1Linear
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 
 from dataset.risk_prediction_index_sample_dataset import RiskPredictionIndexSampleDataset
@@ -173,6 +173,7 @@ if __name__ == "__main__":
     if index_df is None:
         logger.error("索引数据加载失败，程序退出。")
         exit()
+    logger.info(f"索引数据从{config.main_predict.PREDICT_INDEX_TABLE}加载成功，数据行数：{len(index_df)}")
     logger.info(f"索引数据的列为：{index_df.columns}")
     index_df['stats_dt'] = pd.to_datetime(index_df['stats_dt'], format='%Y-%m-%d', errors='coerce')
 
@@ -257,7 +258,7 @@ if __name__ == "__main__":
         'city': feature_dict[Categorical_feature[1]].category_encode.size,
         'season': 4,
     }
-    model = Has_Risk_NFM_MultiLabel(params).to(config.DEVICE) # 等待模型实现
+    model = Has_Risk_NFM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 

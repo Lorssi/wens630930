@@ -158,6 +158,9 @@ class SurroundingPigfarmInfoFeature(BaseFeatureDataSet):
 
         keep_cols = ['stats_dt', 'pigfarm_dk', 'l3_abortion_mean', 'l3_abortion_mean_7d', 'l3_abortion_mean_15d', 'l3_abortion_mean_30d']
         data = data[keep_cols]
+
+        data['stats_dt'] = pd.to_datetime(data['stats_dt'])
+        data['stats_dt'] = data['stats_dt'] + pd.DateOffset(days=1)  # 确保日期是正确的
         self.data = data.copy()
 
     def build_dataset_all(self):

@@ -30,7 +30,7 @@ from feature.gen_feature import FeatureGenerator
 from feature.gen_label import LabelGenerator
 from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
-from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel
+from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel, Has_Risk_NFM_MultiLabel_7d1Linear
 from model.multi_task_nfm import Multi_Task_NFM
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 from module.future_generate_main import FeatureGenerateMain
@@ -409,7 +409,7 @@ if __name__ == "__main__":
         'city': feature_dict[Categorical_feature[1]].category_encode.size,
         'season': 4,
     }
-    model = Has_Risk_NFM_MultiLabel(params).to(config.DEVICE) # 等待模型实现
+    model = Has_Risk_NFM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 
@@ -427,7 +427,7 @@ if __name__ == "__main__":
 
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
     trained_model = train_model(model, train_loader, val_loader, criterion, optimizer, config.NUM_EPOCHS, config.DEVICE, early_stopping=early_stopping)
-    
+
 
     # --- 模型评估 (可选，在测试集上) ---
     # ...

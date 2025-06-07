@@ -160,28 +160,6 @@ class ProductionFeature(BaseFeatureDataSet):
 
         self.data = data.copy()
 
-    def _get_abortion_mean_feature(self):
-        """
-        计算流产率特征:
-        1. abortion_feature_1_7: 流产率
-        2. abortion_mean_recent_7d: 近7天流产率均值
-        3. abortion_mean_recent_14d: 近14天流产率均值
-        4. abortion_mean_recent_21d: 近21天流产率均值
-        """
-        data = self.data.copy()
-
-        data['abortion_mean_recent_7d'] = data.groupby('pigfarm_dk')['abortion_rate']\
-            .rolling(window=7, min_periods=7).mean()\
-            .reset_index(level=0, drop=True)
-        data['abortion_mean_recent_14d'] = data.groupby('pigfarm_dk')['abortion_rate']\
-            .rolling(window=14, min_periods=14).mean()\
-            .reset_index(level=0, drop=True)
-        data['abortion_mean_recent_21d'] = data.groupby('pigfarm_dk')['abortion_rate']\
-            .rolling(window=21, min_periods=21).mean()\
-            .reset_index(level=0, drop=True)
-
-        self.data = data.copy()
-
     def _get_boar_feature(self):
         """
         计算种猪类型特征:
@@ -407,7 +385,6 @@ class ProductionFeature(BaseFeatureDataSet):
 
     def _post_processing_data(self):
         data = self.data.copy()
-
         if data.isnull().any().any():
             logger.info("Warning: Null in production_feature_data.csv")
         self.file_name = "production_feature_data." + self.file_type
@@ -423,6 +400,8 @@ class ProductionFeature(BaseFeatureDataSet):
                                    ] + past_7d_abortion_features
         
         data = data[production_feature_list]
+        data['stats_dt'] = pd.to_datetime(data['stats_dt'])
+        data['stats_dt'] = data['stats_dt'] + pd.DateOffset(days=1)
         self.data = data.copy()
 
     def build_dataset_all(self):
