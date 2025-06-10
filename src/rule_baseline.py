@@ -23,7 +23,7 @@ from tqdm import tqdm
 # 2. 超100头猪苗积压，且猪苗天龄大于40
 # 3. 引种前8-30天猪只蓝耳（野毒）检出阳性
 
-class Baseline:
+class RuleBaseline:
 
     def __init__(self, running_start_date, running_end_date):
         self.running_start_date = pd.to_datetime(running_start_date)
@@ -56,37 +56,46 @@ class Baseline:
         check_out_data = check_out_data[(check_out_data['rqbe3_blue_ear_kyyd_check_out_qty'] > 0) | 
                                         (check_out_data['rqbe3_blue_ear_kypt_check_out_qty'] > 0)]
         
-        # 筛选日期范围
-        check_out_data = check_out_data[(check_out_data['min_boar_inpop_dt'] >= self.running_start_date - pd.Timedelta(days=30)) &
-                                          (check_out_data['min_boar_inpop_dt'] <= self.running_end_date)]
-
         # 如果没有检出阳性数据，直接返回
         if check_out_data.empty:
             return
-            
-        # 获取所有入群日期
-        entry_dates = check_out_data['min_boar_inpop_dt'].dropna().unique()
         
-        # 获取该猪场的所有样本数据
+        # 获取该猪场的所有样本日期
         farm_samples = self.index_sample[self.index_sample['pigfarm_dk'] == pigfarm_dk]
-        if farm_samples.empty:
-            return
         
-        # 对每个入群日期处理
-        for entry_date in entry_dates:
-            # 计算每个样本日期与入群日期的天数差
-            for idx, sample in farm_samples.iterrows():
-                days_diff = (sample['stats_dt'] - entry_date).days
-                
-                # 根据天数差设置相应的abort字段
-                if 0 <= days_diff <= 6:
-                    self.index_sample.loc[idx, ['abort_1_7_decision', 'abort_8_14_decision', 'abort_15_21_decision']] = 1
-                elif 7 <= days_diff <= 13:
-                    self.index_sample.loc[idx, ['abort_1_7_decision', 'abort_8_14_decision']] = 1
-                elif 14 <= days_diff <= 20:
-                    self.index_sample.loc[idx, 'abort_1_7_decision'] = 1
-
-
+        # 对每个样本日期进行处理
+        for _, sample in farm_samples.iterrows():
+            stats_dt = sample['stats_dt']
+            sample_idx = self.index_sample[(self.index_sample['pigfarm_dk'] == pigfarm_dk) & 
+                                      (self.index_sample['stats_dt'] == stats_dt)].index
+            
+            # 判断abort_1_7_decision: stats_dt - 20到stats_dt - 1
+            window_1_7_start = stats_dt - pd.Timedelta(days=20)
+            window_1_7_end = stats_dt - pd.Timedelta(days=1)
+            has_positive_1_7 = any((check_out_data['min_boar_inpop_dt'] >= window_1_7_start) & 
+                                (check_out_data['min_boar_inpop_dt'] <= window_1_7_end))
+            
+            # 判断abort_8_14_decision: stats_dt - 13到stats_dt - 1
+            window_8_14_start = stats_dt - pd.Timedelta(days=13)
+            window_8_14_end = stats_dt - pd.Timedelta(days=1)
+            has_positive_8_14 = any((check_out_data['min_boar_inpop_dt'] >= window_8_14_start) & 
+                                (check_out_data['min_boar_inpop_dt'] <= window_8_14_end))
+            
+            # 判断abort_15_21_decision: stats_dt - 6到stats_dt - 1
+            window_15_21_start = stats_dt - pd.Timedelta(days=6)
+            window_15_21_end = stats_dt - pd.Timedelta(days=1)
+            has_positive_15_21 = any((check_out_data['min_boar_inpop_dt'] >= window_15_21_start) & 
+                                    (check_out_data['min_boar_inpop_dt'] <= window_15_21_end))
+            
+            # 只有当检测为阳性时才将决策值设置为1
+            if has_positive_1_7:
+                self.index_sample.loc[sample_idx, 'abort_1_7_decision'] = 1
+            if has_positive_8_14:
+                self.index_sample.loc[sample_idx, 'abort_8_14_decision'] = 1
+            if has_positive_15_21:
+                self.index_sample.loc[sample_idx, 'abort_15_21_decision'] = 1
+            
+        
     # 超100头猪苗积压，且猪苗天龄大于40
     def piglet_overstock(self, pigfarm_dk):
         # 获取对应猪场的数据
@@ -99,31 +108,44 @@ class Baseline:
         overstock_data = overstock_data[(overstock_data['stats_dt'] >= self.running_start_date - pd.Timedelta(days=30)) &
                                         (overstock_data['stats_dt'] <= self.running_end_date)]
 
-        # 如果没有积压数据，直接返回
+                # 如果没有检出阳性数据，直接返回
         if overstock_data.empty:
             return
         
-        # 获取所有积压日期
-        overstock_dates = overstock_data['stats_dt'].dropna().unique()
-        
-        # 获取该猪场的所有样本数据
+        # 获取该猪场的所有样本日期
         farm_samples = self.index_sample[self.index_sample['pigfarm_dk'] == pigfarm_dk]
-        if farm_samples.empty:
-            return
         
-        # 对每个积压日期处理
-        for overstock_date in overstock_dates:
-            # 计算每个样本日期与积压日期的天数差
-            for idx, sample in farm_samples.iterrows():
-                days_diff = (sample['stats_dt'] - overstock_date).days
-
-                # 根据天数差设置相应的abort字段
-                if 0 <= days_diff <= 6:
-                    self.index_sample.loc[idx, ['abort_1_7_decision', 'abort_8_14_decision', 'abort_15_21_decision']] = 1
-                elif 7 <= days_diff <= 13:
-                    self.index_sample.loc[idx, ['abort_1_7_decision', 'abort_8_14_decision']] = 1
-                elif 14 <= days_diff <= 20:
-                    self.index_sample.loc[idx, 'abort_1_7_decision'] = 1
+        # 对每个样本日期进行处理
+        for _, sample in farm_samples.iterrows():
+            stats_dt = sample['stats_dt']
+            sample_idx = self.index_sample[(self.index_sample['pigfarm_dk'] == pigfarm_dk) & 
+                                      (self.index_sample['stats_dt'] == stats_dt)].index
+            
+            # 判断abort_1_7_decision: stats_dt - 20到stats_dt - 1
+            window_1_7_start = stats_dt - pd.Timedelta(days=20)
+            window_1_7_end = stats_dt - pd.Timedelta(days=1)
+            has_positive_1_7 = any((overstock_data['stats_dt'] >= window_1_7_start) & 
+                                (overstock_data['stats_dt'] <= window_1_7_end))
+            
+            # 判断abort_8_14_decision: stats_dt - 13到stats_dt - 1
+            window_8_14_start = stats_dt - pd.Timedelta(days=13)
+            window_8_14_end = stats_dt - pd.Timedelta(days=1)
+            has_positive_8_14 = any((overstock_data['stats_dt'] >= window_8_14_start) & 
+                                (overstock_data['stats_dt'] <= window_8_14_end))
+            
+            # 判断abort_15_21_decision: stats_dt - 6到stats_dt - 1
+            window_15_21_start = stats_dt - pd.Timedelta(days=6)
+            window_15_21_end = stats_dt - pd.Timedelta(days=1)
+            has_positive_15_21 = any((overstock_data['stats_dt'] >= window_15_21_start) & 
+                                    (overstock_data['stats_dt'] <= window_15_21_end))
+            
+            # 只有当检测为阳性时才将决策值设置为1
+            if has_positive_1_7:
+                self.index_sample.loc[sample_idx, 'abort_1_7_decision'] = 1
+            if has_positive_8_14:
+                self.index_sample.loc[sample_idx, 'abort_8_14_decision'] = 1
+            if has_positive_15_21:
+                self.index_sample.loc[sample_idx, 'abort_15_21_decision'] = 1
 
 
     # 引种前8-30天猪只蓝耳（野毒）检出阳性
@@ -140,40 +162,54 @@ class Baseline:
         # 如果没有检出阳性数据，直接返回
         if check_out_data.empty:
             return
-            
-        # 获取所有引种日期
-        entry_dates = check_out_data['allot_dt'].dropna().unique()
         
-        # 获取该猪场的所有样本数据
+        # 获取该猪场的所有样本日期
         farm_samples = self.index_sample[self.index_sample['pigfarm_dk'] == pigfarm_dk]
-        if farm_samples.empty:
-            return
         
-        # 对每个引种日期处理
-        for entry_date in entry_dates:
-            # 计算每个样本日期与引种日期的天数差
-            for idx, sample in farm_samples.iterrows():
-                days_diff = (sample['stats_dt'] - entry_date).days
+        # 对每个样本日期进行处理
+        for _, sample in farm_samples.iterrows():
+            stats_dt = sample['stats_dt']
+            sample_idx = self.index_sample[(self.index_sample['pigfarm_dk'] == pigfarm_dk) & 
+                                      (self.index_sample['stats_dt'] == stats_dt)].index
+            
+            # 判断abort_1_7_decision: stats_dt - 20到stats_dt - 1
+            window_1_7_start = stats_dt - pd.Timedelta(days=20)
+            window_1_7_end = stats_dt - pd.Timedelta(days=1)
+            has_positive_1_7 = any((check_out_data['allot_dt'] >= window_1_7_start) & 
+                                (check_out_data['allot_dt'] <= window_1_7_end))
+            
+            # 判断abort_8_14_decision: stats_dt - 13到stats_dt - 1
+            window_8_14_start = stats_dt - pd.Timedelta(days=13)
+            window_8_14_end = stats_dt - pd.Timedelta(days=1)
+            has_positive_8_14 = any((check_out_data['allot_dt'] >= window_8_14_start) & 
+                                (check_out_data['allot_dt'] <= window_8_14_end))
+            
+            # 判断abort_15_21_decision: stats_dt - 6到stats_dt - 1
+            window_15_21_start = stats_dt - pd.Timedelta(days=6)
+            window_15_21_end = stats_dt - pd.Timedelta(days=1)
+            has_positive_15_21 = any((check_out_data['allot_dt'] >= window_15_21_start) & 
+                                    (check_out_data['allot_dt'] <= window_15_21_end))
+            
+            # 更新决策值
+            # 只有当检测为阳性时才将决策值设置为1
+            if has_positive_1_7:
+                self.index_sample.loc[sample_idx, 'abort_1_7_decision'] = 1
+            if has_positive_8_14:
+                self.index_sample.loc[sample_idx, 'abort_8_14_decision'] = 1
+            if has_positive_15_21:
+                self.index_sample.loc[sample_idx, 'abort_15_21_decision'] = 1
                 
-                # 根据天数差设置相应的abort字段
-                if 0 <= days_diff <= 6:
-                    self.index_sample.loc[idx, ['abort_1_7_decision', 'abort_8_14_decision', 'abort_15_21_decision']] = 1
-                elif 7 <= days_diff <= 13:
-                    self.index_sample.loc[idx, ['abort_1_7_decision', 'abort_8_14_decision']] = 1
-                elif 14 <= days_diff <= 20:
-                    self.index_sample.loc[idx, 'abort_1_7_decision'] = 1
-
 
     def get_result(self):
-        # 初始化结果
+        # 获取index_sample的所有猪场数据键
+        pigfarm_dks = self.index_sample['pigfarm_dk'].unique()
+
+        # 初始化所有决策值为0
         self.index_sample['abort_1_7_decision'] = 0
         self.index_sample['abort_8_14_decision'] = 0
         self.index_sample['abort_15_21_decision'] = 0
 
-        # 获取index_sample的所有猪场数据键
-        pigfarm_dks = self.index_sample['pigfarm_dk'].unique()
-
-        for pigfarm_dk in tqdm(pigfarm_dks):
+        for pigfarm_dk in tqdm(pigfarm_dks, desc="Processing pig farms"):
             # 处理每个猪场的数据
             self.pig_check_out_3(pigfarm_dk)
             self.piglet_overstock(pigfarm_dk)
@@ -187,7 +223,7 @@ class Baseline:
 
 
 if __name__ == "__main__":
-    baseline = Baseline("2024-03-01", "2024-03-30")
+    baseline = RuleBaseline("2024-12-01", "2024-12-30")
     index_sample = baseline.get_result()
     index_sample.to_csv("data/predict/rule_baseline/abort_abnormal.csv", index=False, encoding='utf-8-sig')
 
