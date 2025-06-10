@@ -197,6 +197,7 @@ if __name__ == "__main__":
     if index_df is None:
         logger.error("索引数据加载失败，程序退出。")
         exit()
+    logger.info(f"索引数据从{config.main_predict.PREDICT_INDEX_TABLE}加载成功，数据行数：{len(index_df)}")
     logger.info(f"索引数据的列为：{index_df.columns}")
     index_df['stats_dt'] = pd.to_datetime(index_df['stats_dt'], format='%Y-%m-%d', errors='coerce')
 
@@ -220,6 +221,7 @@ if __name__ == "__main__":
     connect_feature_obj = DaysPredictionFeatureDataset()
     logger.info("----------Generating train dataset----------")
     prdict_connect_feature_data = connect_feature_obj.build_train_dataset(input_dataset=index_df.copy(), param=None)
+    logger.info(f"预测特征数据的行数为：{len(prdict_connect_feature_data)}")
 
     predict_connect_feature_data = prdict_connect_feature_data.reset_index(drop=True)
     logger.info(f"预测特征数据的列为：{predict_connect_feature_data.columns}")
@@ -241,6 +243,7 @@ if __name__ == "__main__":
     with open(config.TRANSFORMER_SAVE_PATH, "r+") as dump_file:
         transform = AbortionPredictionTransformPipeline.from_json(dump_file.read())
     transformed_feature_df = transform.transform(input_dataset=index_merge_df)
+    logger.info(f"特征转换完成，转换后的数据行数为：{len(transformed_feature_df)}")
 
     predict_X = transformed_feature_df.copy()
     predict_X = predict_X[ColumnsConfig.feature_columns]
@@ -249,6 +252,7 @@ if __name__ == "__main__":
     transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
     transformed_masked_null_predict_X.fillna(0, inplace=True)  # 填充空值为0
     logger.info(f"data_transformed_masked_null数据字段为：{transformed_masked_null_predict_X.columns}")
+    logger.info(f"data_transformed_masked_null数据行数为：{len(transformed_masked_null_predict_X)}")
     
     transformed_masked_null_predict_X.to_csv(
         DataPathConfig.PREDICT_DATA_TRANSFORMED_MASK_NULL_PREDICT_PATH,
@@ -281,6 +285,7 @@ if __name__ == "__main__":
 
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
     predict_df = predict_model(model, predict_loader, config.DEVICE, transformed_feature_df)
+    logger.info(f"预测结果行数为：{len(predict_df)}")
 
 
     # 保存预测结果
@@ -288,5 +293,6 @@ if __name__ == "__main__":
         'pigfarm_dk': 'pigfarm_dk_transfrom',
     })
     predict_df = pd.concat([predict_index_label.reset_index(drop=True), predict_df.reset_index(drop=True)], axis=1)
+    logger.info(f"concat后的预测结果行数为：{len(predict_df)}")
     save_to_csv(df=predict_df, filepath=config.main_predict.DAYS_PREDICT_RESULT_SAVE_PATH)
-    logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")
+    logger.info(f"预测结果已保存至: {config.main_predict.DAYS_PREDICT_RESULT_SAVE_PATH}")

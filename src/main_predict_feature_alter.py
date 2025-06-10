@@ -193,10 +193,10 @@ if __name__ == "__main__":
     )
     feature_gen_main.generate_feature()  # 生成特征
 
-
     connect_feature_obj = RiskPredictionFeatureDataset()
     logger.info("----------Generating train dataset----------")
     prdict_connect_feature_data = connect_feature_obj.build_train_dataset(input_dataset=index_df.copy(), param=None)
+    logger.info(f"预测特征数据的行数为：{len(prdict_connect_feature_data)}")
 
     predict_connect_feature_data = prdict_connect_feature_data.reset_index(drop=True)
     logger.info(f"预测特征数据的列为：{predict_connect_feature_data.columns}")
@@ -217,6 +217,7 @@ if __name__ == "__main__":
     with open(config.TRANSFORMER_SAVE_PATH, "r+") as dump_file:
         transform = AbortionPredictionTransformPipeline.from_json(dump_file.read())
     transformed_feature_df = transform.transform(input_dataset=index_merge_df)
+    logger.info(f"特征转换完成，转换后的数据行数为：{len(transformed_feature_df)}")
 
     predict_X = transformed_feature_df.copy()
     predict_X = predict_X[ColumnsConfig.feature_columns]
@@ -225,6 +226,7 @@ if __name__ == "__main__":
     transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
     transformed_masked_null_predict_X.fillna(0, inplace=True)  # 填充空值为0
     logger.info(f"data_transformed_masked_null数据字段为：{transformed_masked_null_predict_X.columns}")
+    logger.info(f"data_transformed_masked_null数据行数为：{len(transformed_masked_null_predict_X)}")
     
     transformed_masked_null_predict_X.to_csv(
         DataPathConfig.PREDICT_DATA_TRANSFORMED_MASK_NULL_PREDICT_PATH,
@@ -256,6 +258,7 @@ if __name__ == "__main__":
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
         'city': feature_dict[Categorical_feature[1]].category_encode.size,
+        # 'l3_org_inv_dk': feature_dict[Categorical_feature[2]].category_encode.size,
         'season': 4,
     }
     model = Has_Risk_NFM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现
@@ -265,6 +268,7 @@ if __name__ == "__main__":
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
     predict_df = predict_model(model, predict_loader, config.DEVICE, transformed_feature_df)
     predict_df = predict_df[ColumnsConfig.MAIN_PREDICT_TEST_WITH_INDEX_DATA_COLUMN]  # 只保留需要的列
+    logger.info(f"预测结果行数为：{len(predict_df)}")
 
     # feature_df = pd.read_csv(algo_interim_dir / "risk_train_connected_feature_data.csv", encoding='utf-8-sig')
     # feature_df = feature_df[['stats_dt'] + ColumnsConfig.feature_columns]
@@ -276,5 +280,6 @@ if __name__ == "__main__":
         'pigfarm_dk': 'pigfarm_dk_transfrom',
     })
     predict_df = pd.concat([predict_index_label.reset_index(drop=True), predict_df.reset_index(drop=True)], axis=1)
+    logger.info(f"concat后的预测结果行数为：{len(predict_df)}")
     save_to_csv(df=predict_df, filepath=config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH)
     logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")

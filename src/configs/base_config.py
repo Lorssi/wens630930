@@ -27,6 +27,8 @@ class RawData(Enum):
 
     PIG_LET_DATA = RAW_DATA_DIR / "ads_pig_efficient_piglet_batch_analysis_day.csv"
 
+    ABNORMAL_BOAR_REPORT_MODEL_DATA = RAW_DATA_DIR / "ADS_ABNORMAL_BOAR_REPORT_MODEL.csv"
+
 class FeatureData(Enum):
 
     PRODUCTION_FEATURE_DATA = FEATURE_STORE_DIR / "production_feature_data.csv"
@@ -45,7 +47,7 @@ class FeatureData(Enum):
 
     RULE_BASELINE_FEATURE_DATA = FEATURE_STORE_DIR / "rule_baseline_feature_data.csv"
 
-    
+    ABNORMAL_BOAR_FEATURE_DATA = FEATURE_STORE_DIR / "abnormal_boar_feature_data.csv"
 
 
 class ModulePath(Enum):
@@ -90,6 +92,10 @@ class ModulePath(Enum):
         {'dataset_name': 'dataset.rule_baseline_feature',
          'file_type': 'csv',
          'main_class_name': 'RulBaselineFeature',
+         'params': {}},
+        {'dataset_name': 'dataset.abnormal_breed_sow_feature',
+         'file_type': 'csv',
+         'main_class_name': 'AbnormalBreedSowFeature',
          'params': {}},
     ]
     # 训练模块
