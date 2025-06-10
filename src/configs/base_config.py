@@ -24,6 +24,9 @@ class RawData(Enum):
     W01_AST_BOAR = RAW_DATA_DIR / "W01_AST_BOAR.csv"
     TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2 = RAW_DATA_DIR / "TMP_ADS_PIG_ISOLATION_TAME_RISK_L1_N2.csv"
     ADS_PIG_ISOLATION_TAME_PROLINE_RISK = RAW_DATA_DIR / "ADS_PIG_ISOLATION_TAME_PROLINE_RISK.csv"
+    # 免疫数据
+    ADS_CQ_FWB_IMMU_SMART_MANA_MDL = RAW_DATA_DIR / "ADS_CQ_FWB_IMMU_SMART_MANA_MDL.csv" # 服务部级别
+    TMP_CQ_IMMUPLANDT = RAW_DATA_DIR / "TMP_CQ_IMMUPLANDT.csv" # 猪场级别
 
     PIG_LET_DATA = RAW_DATA_DIR / "ads_pig_efficient_piglet_batch_analysis_day.csv"
 
@@ -48,6 +51,8 @@ class FeatureData(Enum):
     RULE_BASELINE_FEATURE_DATA = FEATURE_STORE_DIR / "rule_baseline_feature_data.csv"
 
     ABNORMAL_BOAR_FEATURE_DATA = FEATURE_STORE_DIR / "abnormal_boar_feature_data.csv"
+
+    IMMUNE_FEATURE_DATA = FEATURE_STORE_DIR / "immune_feature_data.csv"
 
 
 class ModulePath(Enum):
@@ -96,6 +101,11 @@ class ModulePath(Enum):
         {'dataset_name': 'dataset.abnormal_breed_sow_feature',
          'file_type': 'csv',
          'main_class_name': 'AbnormalBreedSowFeature',
+         'params': {}},
+        # 免疫特征
+        {'dataset_name': 'dataset.immune_feature',
+         'file_type': 'csv',
+         'main_class_name': 'ImmuneFeature',
          'params': {}},
     ]
     # 训练模块

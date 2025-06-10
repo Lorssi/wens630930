@@ -34,6 +34,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         self.sorrounding_feature_data = pd.read_csv(base_config.FeatureData.SORROUNDING_FEATURE_DATA.value)
         self.rule_baseline_feature_data = pd.read_csv(base_config.FeatureData.RULE_BASELINE_FEATURE_DATA.value)
         self.abnormal_boar_feature_data = pd.read_csv(base_config.FeatureData.ABNORMAL_BOAR_FEATURE_DATA.value)
+        self.immune_feature_data = pd.read_csv(base_config.FeatureData.IMMUNE_FEATURE_DATA.value)
 
         self.file_name = None  # 文件名
         self.index_data = pd.DataFrame()  # 索引数据
@@ -263,6 +264,31 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         index_data = pd.merge(
             index_data,
             abnormal_boar_feature_data,
+            on=['stats_dt', 'pigfarm_dk'],
+            how='left'
+        )
+
+        self.index_data = index_data.copy()
+
+    # 免疫特征
+    def _get_immune_feature(self):
+        """
+        使用merge和向量化操作获取mean_prop特征，避免逐行处理
+        """
+        logger.info("获取免疫特征...")
+
+        # 复制数据并确保类型正确
+        index_data = self.index_data.copy()
+        immune_feature_data = self.immune_feature_data.copy()
+
+       # 转换日期类型和其他数据类型
+        index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        immune_feature_data['stats_dt'] = pd.to_datetime(immune_feature_data['stats_dt'])
+
+        # immune_feature_data['stats_dt'] = immune_feature_data['stats_dt'] + pd.DateOffset(days=1)  # 向后偏移一天
+        index_data = pd.merge(
+            index_data,
+            immune_feature_data,
             on=['stats_dt', 'pigfarm_dk'],
             how='left'
         )
