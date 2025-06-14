@@ -221,7 +221,7 @@ class PrrsCheckFeature(BaseFeatureDataSet):
         # 先获取所有唯一的日期和猪场组合
         unique_dates = production_data['stats_dt'].unique()
         unique_farms = production_data['pigfarm_dk'].unique()
-        
+
         # 预处理数据，提高后续计算效率
         check_data_preprocessed = check_data[['pigfarm_dk', 'stats_dt', 'check_qty', 'check_out_qty', 'is_wild']].copy()
         
@@ -286,6 +286,146 @@ class PrrsCheckFeature(BaseFeatureDataSet):
         
         logger.info(f"计算完成PRRS 7天阳性率和野毒阳性率，总数据量: {len(self.data)}")
 
+    def _get_check_out_15d_feature(self):
+        """获取组织特征"""
+        production_data = self.production_data.copy()
+        check_data = self.check_data.copy()
+        check_data = check_data.rename(columns={'receive_dt': 'stats_dt'})
+        check_data = check_data.rename(columns={'org_inv_dk': 'pigfarm_dk'})
+
+        """
+        计算PRRS检查结果的阳性率，包括总阳性率和野毒阳性率
+        对于每个猪场，计算其近15天内的PRRS检测阳性率
+        """
+        # 定义野毒相关的check_item_dk
+        wild_check_items = [
+            'bDoAAfRM6YiCrSt1', 
+            'bDoAArPPgj6CrSt1', 
+            'bDoAAfRM6IGCrSt1', 
+            'bDoAAfYsNUGCrSt1', 
+            'bDoAAfYsM8eCrSt1', 
+            'bDoAAfYr79SCrSt1'
+        ]
+        
+        # 定义特殊项目
+        special_items = [
+            'bDoAA065yHyCrSt1',
+            'bDoAAzoDnCKCrSt1',
+            'bDoAAvklLFWCrSt1',
+        ]
+        
+        # 定义野毒相关的index_item_dk
+        wild_indexes = [
+            'bDoAAfYcdbLWD/D5',
+            'bDoAAfYcdbTWD/D5',
+            'bDoAAfRPf0jWD/D5',
+            'bDoAAKqewlzWD/D5',
+        ]
+        
+        # 确保有数据可处理
+        if len(check_data) == 0:
+            logger.warning("没有检测数据可供处理")
+            # 如果没有结果数据，添加默认列
+            production_data['check_out_ratio_15d'] = np.nan
+            production_data['wild_check_out_ratio_15d'] = np.nan
+            self.data =  pd.merge(
+                self.data,
+                production_data[['stats_dt', 'pigfarm_dk', 'check_out_ratio_15d', 'wild_check_out_ratio_15d']].copy(),
+                on=["stats_dt", "pigfarm_dk"],
+                how="left" 
+            )
+            return
+        
+        # 为check_data添加标记，标识是否为野毒数据
+        # 条件1: check_item_dk在wild_check_items中
+        # 条件2: check_item_dk在special_items中且index_item_dk在wild_indexes中
+        check_data['is_wild'] = (
+            check_data['check_item_dk'].isin(wild_check_items) | 
+            ((check_data['check_item_dk'].isin(special_items)) & 
+             (check_data['index_item_dk'].isin(wild_indexes)))
+        )
+        
+        # 分别计算每个猪场每天的检测总量和阳性数量
+        # 使用groupby优化计算效率
+        result_data = []
+        
+        # 先获取所有唯一的日期和猪场组合
+        unique_dates = production_data['stats_dt'].unique()
+        unique_farms = production_data['pigfarm_dk'].unique()
+        
+        # 预处理数据，提高后续计算效率
+        check_data_preprocessed = check_data[['pigfarm_dk', 'stats_dt', 'check_qty', 'check_out_qty', 'is_wild']].copy()
+        
+        for farm_dk in tqdm(unique_farms):
+            farm_check_data = check_data_preprocessed[check_data_preprocessed['pigfarm_dk'] == farm_dk]
+            
+            for target_date in unique_dates:
+                # 计算15天日期范围
+                start_date = pd.to_datetime(target_date) - pd.Timedelta(days=14)
+
+                # 过滤该日期范围内的数据
+                date_range_data = farm_check_data[
+                    (farm_check_data['stats_dt'] >= start_date) & 
+                    (farm_check_data['stats_dt'] <= target_date)
+                ]
+                
+                if len(date_range_data) == 0:
+                    continue
+                
+                # 计算总阳性率
+                total_check_qty = date_range_data['check_qty'].sum()
+                total_check_out_qty = date_range_data['check_out_qty'].sum()
+                total_positive_rate = total_check_out_qty / total_check_qty if total_check_qty > 0 else np.nan
+                
+                # 计算野毒阳性率
+                wild_data = date_range_data[date_range_data['is_wild']]
+                wild_check_qty = wild_data['check_qty'].sum()
+                wild_check_out_qty = wild_data['check_out_qty'].sum()
+                wild_positive_rate = wild_check_out_qty / wild_check_qty if wild_check_qty > 0 else np.nan
+                
+                result_data.append({
+                    'pigfarm_dk': farm_dk,
+                    'stats_dt': target_date,
+                    'prrs_15d_positive_rate': round(total_positive_rate, 4),
+                    'prrs_wild_15d_positive_rate': round(wild_positive_rate, 4)
+                })
+        
+        
+        # 将结果转换为DataFrame并与index_data合并
+        if result_data:
+            result_df = pd.DataFrame(result_data)
+
+            result_df['stats_dt'] = pd.to_datetime(result_df['stats_dt'])
+            # result_df['stats_dt'] = result_df['stats_dt'] + pd.DateOffset(days=1)  # 将日期加1天，确保预警运行边界日期的特征为观察期窗口特征
+            
+            production_data = production_data.merge(
+                result_df, 
+                on=['pigfarm_dk', 'stats_dt'], 
+                how='left'
+            )
+            
+            # 填充空值
+            production_data['check_out_ratio_15d'] = production_data['prrs_15d_positive_rate']
+            production_data['wild_check_out_ratio_15d'] = production_data['prrs_wild_15d_positive_rate']
+            self.data =  pd.merge(
+                self.data,
+                production_data[['stats_dt', 'pigfarm_dk', 'check_out_ratio_15d', 'wild_check_out_ratio_15d']].copy(),
+                on=["stats_dt", "pigfarm_dk"],
+                how="left" 
+            )
+        else:
+            # 如果没有结果数据，添加默认列
+            production_data['check_out_ratio_15d'] = np.nan
+            production_data['wild_check_out_ratio_15d'] = np.nan
+            self.data =  pd.merge(
+                self.data,
+                production_data[['stats_dt', 'pigfarm_dk', 'check_out_ratio_15d', 'wild_check_out_ratio_15d']].copy(),
+                on=["stats_dt", "pigfarm_dk"],
+                how="left" 
+            )
+
+        logger.info(f"计算完成PRRS 15天阳性率和野毒阳性率，总数据量: {len(self.data)}")
+
     def _post_processing_data(self):
         if self.data.isnull().any().any():
             logger.info("Warning: Null in check_feature_data.csv")
@@ -301,13 +441,14 @@ class PrrsCheckFeature(BaseFeatureDataSet):
         self._preprocessing_data()
         logger.info("Calculating interval from last purchase...")
         self._get_check_out_7d_feature()
+        self._get_check_out_15d_feature()
         logger.info("-----Postprocessing data----- ")
         self._post_processing_data()
         # logger.info("-----Save as : {}".format("/".join([config.FEATURE_STORE_ROOT, self.file_name])))
         logger.info("-----Save as : {}".format(config.FeatureData.CHECK_FEATURE_DATA.value))
         # self.dump_dataset("/".join([config.FEATURE_STORE_ROOT, self.file_name]))
         self.dump_dataset(config.FeatureData.CHECK_FEATURE_DATA.value)
-        logger.info("-----Dataset saved successfully-----")
+        self.data.to_csv('data.csv', index=False, encoding='utf-8-sig')
 
 if __name__ == "__main__":
     # Example usage

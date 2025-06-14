@@ -111,8 +111,6 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
         if not abnormal_to_normal.empty:
             for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
                 if col in abnormal_to_normal.columns:
-                    print('abnormal_to_normal:')
-                    print(abnormal_to_normal[col])
                     data[f'abnormal_to_normal_{col}'] = abnormal_to_normal[col]
         # 将specail_samples_result[sample_type]=='abnormal_to_abnormal'的precision,recall,f1_score,auc,special_recall列加在data后面
         abnormal_to_abnormal = special_samples_result[special_samples_result['sample_type'] == 'abnormal_to_abnormal'].reset_index().copy()
@@ -247,12 +245,12 @@ if __name__ == "__main__":
 
     features = [
         # 'preg_stock_sqty_change_ratio_7d', 'preg_stock_sqty_change_ratio_15d', 
-        'reserve_sow_sqty_change_ratio_7d', 'reserve_sow_sqty_change_ratio_15d', 
-        'basesow_sqty_change_ratio_7d', 'basesow_sqty_change_ratio_15d'
+        # 'reserve_sow_sqty_change_ratio_7d', 'reserve_sow_sqty_change_ratio_15d', 
+        'abnormal_find_days', 'is_not_immu_21d'
         ]
 
 
-    version = ['v1.0.12', 'v1.0.13', 'v1.0.14', 'v1.0.15']
+    version = ['v1.0.17', 'v1.0.18']
 
     for feature, version in zip(features, version):
         config.EvalFilename.feature = feature
