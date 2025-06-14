@@ -93,10 +93,10 @@ class ModulePath(Enum):
          'file_type': 'csv',
          'main_class_name': 'RulBaselineFeature',
          'params': {}},
-        {'dataset_name': 'dataset.abnormal_breed_sow_feature',
-         'file_type': 'csv',
-         'main_class_name': 'AbnormalBreedSowFeature',
-         'params': {}},
+        # {'dataset_name': 'dataset.abnormal_breed_sow_feature',
+        #  'file_type': 'csv',
+        #  'main_class_name': 'AbnormalBreedSowFeature',
+        #  'params': {}},
     ]
     # 训练模块
     algo_list = [

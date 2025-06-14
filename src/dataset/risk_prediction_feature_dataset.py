@@ -314,7 +314,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         logger.info("-----Connecting feature: rule baseline fea")
         self._get_rule_baseline_feature()
         logger.info("-----Connecting feature: abnormal boar fea")
-        self._get_abnormal_feature()
+        # self._get_abnormal_feature()
         logger.info("-----Postprocessing Data-----")
         self._post_processing_train_data()
         self.dump_dataset(risk_config.algo_interim_dir / self.file_name)

@@ -407,7 +407,6 @@ if __name__ == "__main__":
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
         'city': feature_dict[Categorical_feature[1]].category_encode.size,
-        # 'l3_org_inv_dk': feature_dict[Categorical_feature[2]].category_encode.size,
         'season': 4,
     }
     model = Has_Risk_NFM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现

@@ -7,8 +7,8 @@ DATA_DIR = ROOT_DIR / "data"
 MODELS_DIR = ROOT_DIR / "models"
 
 # --- 日期 ---
-TRAIN_RUNNING_DT = "2024-12-1" # 运行日期 (用于数据切分)
-TRAIN_INTERVAL = 400 # 训练数据的时间间隔 (单位：天)
+TRAIN_RUNNING_DT = "2025-4-25" # 运行日期 (用于数据切分)
+TRAIN_INTERVAL = 1500 # 训练数据的时间间隔 (单位：天)
 
 # --- 数据相关配置 ---
 VALIDATION_SPLIT_RATIO = 0.075 # 验证集占总猪场数据的比例 (按猪场ID划分时)
