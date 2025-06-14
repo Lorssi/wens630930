@@ -10,9 +10,6 @@ sys.path.append(str(project_root))
 
 from configs.feature_config import DataPathConfig
 
-
-
-
 def calculate_abortion_rate(eval_running_dt_start=None, eval_running_dt_end=None):
     """
     计算流产率
@@ -29,9 +26,6 @@ def calculate_abortion_rate(eval_running_dt_start=None, eval_running_dt_end=None
     production_data.sort_values(by=['stats_dt', 'pigfarm_dk'], inplace=True)
 
     # 计算流产率
-    # 确保流产数量和怀孕母猪存栏量是数值类型，并将NaN填充为0，因为它们参与计算
-    production_data['abort_qty'] = pd.to_numeric(production_data['abort_qty'], errors='coerce').fillna(0)
-    production_data['preg_stock_qty'] = pd.to_numeric(production_data['preg_stock_qty'], errors='coerce').fillna(0)
 
     # 使用 groupby 和 rolling window 计算每个猪场每个日期的近7天流产总数
     production_data['recent_7day_abort_sum'] = production_data.groupby('pigfarm_dk')['abort_qty'].rolling(window=7, min_periods=7).sum()\
@@ -66,6 +60,63 @@ def calculate_abortion_rate(eval_running_dt_start=None, eval_running_dt_end=None
     return production_data[['stats_dt', 'pigfarm_dk', 'abortion_rate']].copy()
 
 
+def mark_abnormal_abortion_rates(abortion_rate_data, threshold=0.0025):
+    """
+    标记受异常流产率影响的样本
+    
+    参数:
+        abortion_rate_data: 包含stats_dt, pigfarm_dk, abortion_rate的DataFrame
+        threshold: 流产率阈值
+        
+    返回:
+        添加了单次异常影响标记的DataFrame
+    """
+    # 创建结果DataFrame的副本
+    result = abortion_rate_data.copy()
+    
+    # 初始化影响标记列为0
+    result['single_influence_1_7'] = 0
+    result['single_influence_8_14'] = 0
+    result['single_influence_15_21'] = 0
+    
+    # 为每个猪场处理
+    for pigfarm, farm_data in tqdm(result.groupby('pigfarm_dk'), desc="为每个猪场标记异常流产率"):
+        # 查找异常流产率的日期
+        farm_data_sorted = farm_data.sort_values('stats_dt')
+        
+        # 找出异常流产率的日期（满足条件：t天流产率>阈值，t-1和t+1天流产率<阈值）
+        for i in range(1, len(farm_data_sorted) - 1):
+            prev_row = farm_data_sorted.iloc[i-1]
+            curr_row = farm_data_sorted.iloc[i]
+            next_row = farm_data_sorted.iloc[i+1]
+            
+            # 检查是否符合异常流产率的条件
+            if (curr_row['abortion_rate'] > threshold and 
+                prev_row['abortion_rate'] <= threshold and 
+                next_row['abortion_rate'] <= threshold):
+                
+                abnormal_date = curr_row['stats_dt']
+                
+                # 计算需要标记的三个时间窗口的日期
+                influence_1_7_dates = [abnormal_date - pd.Timedelta(days=d) for d in [9, 8, 7, 6]]
+                influence_8_14_dates = [abnormal_date - pd.Timedelta(days=d) for d in [16, 15, 14, 13]]
+                influence_15_21_dates = [abnormal_date - pd.Timedelta(days=d) for d in [23, 22, 21, 20]]
+                
+                # 标记第一个窗口 (1-7天)
+                mask_1_7 = (result['pigfarm_dk'] == pigfarm) & (result['stats_dt'].isin(influence_1_7_dates))
+                result.loc[mask_1_7, 'single_influence_1_7'] = 1
+                
+                # 标记第二个窗口 (8-14天)
+                mask_8_14 = (result['pigfarm_dk'] == pigfarm) & (result['stats_dt'].isin(influence_8_14_dates))
+                result.loc[mask_8_14, 'single_influence_8_14'] = 1
+                
+                # 标记第三个窗口 (15-21天)
+                mask_15_21 = (result['pigfarm_dk'] == pigfarm) & (result['stats_dt'].isin(influence_15_21_dates))
+                result.loc[mask_15_21, 'single_influence_15_21'] = 1
+    
+    return result
+
+
 def abortion_abnormal_index_sample(eval_running_dt_start=None, eval_running_dt_end=None, threshold=0.0025):
     """
     生成任务1：猪场异常预警的index_sample和index_ground_truth
@@ -75,6 +126,9 @@ def abortion_abnormal_index_sample(eval_running_dt_start=None, eval_running_dt_e
     
     # 计算流产率
     abortion_rate_data = calculate_abortion_rate(eval_running_dt_start, eval_running_dt_end)
+
+    # 标记异常流产率
+    abortion_rate_data = mark_abnormal_abortion_rates(abortion_rate_data, threshold)
     
     # 筛选测试集范围内的数据
     eval_start = pd.to_datetime(eval_running_dt_start)
@@ -85,13 +139,8 @@ def abortion_abnormal_index_sample(eval_running_dt_start=None, eval_running_dt_e
                                 (abortion_rate_data['stats_dt'] <= extended_end)].copy()
     
     # 生成真实标签，为每个日期和猪场生成未来三个时间窗口的标签
-    # 初始化标签列
-    ground_truth_index['abort_1_7'] = 0
-    ground_truth_index['abort_8_14'] = 0
-    ground_truth_index['abort_15_21'] = 0
-
     # 为每个猪场处理
-    for pigfarm, farm_data in ground_truth_index.groupby('pigfarm_dk'):
+    for pigfarm, farm_data in tqdm(ground_truth_index.groupby('pigfarm_dk'), desc="为每个猪场生成真实标签"):
         # 获取排序后的数据
         farm_data_sorted = farm_data.sort_values('stats_dt')
 
@@ -105,6 +154,10 @@ def abortion_abnormal_index_sample(eval_running_dt_start=None, eval_running_dt_e
             ]
             if any(future_1_7['abortion_rate'] > threshold):
                 ground_truth_index.loc[idx, 'abort_1_7'] = 1
+            else:
+                if len(future_1_7) != 7:
+                    continue
+                ground_truth_index.loc[idx, 'abort_1_7'] = 0
 
             # 计算未来8-14天的标签
             future_8_14 = farm_data_sorted[
@@ -113,6 +166,10 @@ def abortion_abnormal_index_sample(eval_running_dt_start=None, eval_running_dt_e
             ]
             if any(future_8_14['abortion_rate'] > threshold):
                 ground_truth_index.loc[idx, 'abort_8_14'] = 1
+            else:
+                if len(future_8_14) != 7:
+                    continue
+                ground_truth_index.loc[idx, 'abort_8_14'] = 0
 
             # 计算未来15-21天的标签
             future_15_21 = farm_data_sorted[
@@ -121,15 +178,21 @@ def abortion_abnormal_index_sample(eval_running_dt_start=None, eval_running_dt_e
             ]
             if any(future_15_21['abortion_rate'] > threshold):
                 ground_truth_index.loc[idx, 'abort_15_21'] = 1
+            else:
+                if len(future_15_21) != 7:
+                    continue
+                ground_truth_index.loc[idx, 'abort_15_21'] = 0
 
     # 只保留评估期内的数据
     ground_truth_index = ground_truth_index[
         (ground_truth_index['stats_dt'] >= eval_start) & 
         (ground_truth_index['stats_dt'] <= eval_end)
     ]
+    # 删除空值的行
+    ground_truth_index.dropna(subset=['abort_1_7', 'abort_8_14', 'abort_15_21'], inplace=True)
 
     # 创建index_ground_truth
-    index_ground_truth = ground_truth_index[['stats_dt', 'pigfarm_dk', 'abort_1_7', 'abort_8_14', 'abort_15_21']].copy()
+    index_ground_truth = ground_truth_index[['stats_dt', 'pigfarm_dk', 'abort_1_7', 'abort_8_14', 'abort_15_21', 'single_influence_1_7', 'single_influence_8_14', 'single_influence_15_21']].copy()
 
     # 创建index_sample
     index_sample = ground_truth_index[['stats_dt', 'pigfarm_dk']].copy()
@@ -147,6 +210,9 @@ def abortion_days_index_sample(eval_running_dt_start=None, eval_running_dt_end=N
     # 计算流产率
     abortion_rate_data = calculate_abortion_rate(eval_running_dt_start, eval_running_dt_end)
 
+    # 标记流产率异常导致的影响
+    abortion_rate_data = mark_abnormal_abortion_rates(abortion_rate_data, threshold)
+
     # 筛选测试集范围内的数据
     eval_start = pd.to_datetime(eval_running_dt_start)
     eval_end = pd.to_datetime(eval_running_dt_end)
@@ -157,13 +223,8 @@ def abortion_days_index_sample(eval_running_dt_start=None, eval_running_dt_end=N
     ground_truth_index = ground_truth_index.sort_values(by=['pigfarm_dk', 'stats_dt'])
 
     # 生成真实标签，为每个日期和猪场生成未来三个时间窗口的标签
-    # 初始化标签列
-    ground_truth_index['abort_days_1_7'] = 0
-    ground_truth_index['abort_days_8_14'] = 0
-    ground_truth_index['abort_days_15_21'] = 0
-
     # 为每个猪场处理
-    for pigfarm, farm_data in tqdm(ground_truth_index.groupby('pigfarm_dk'), desc="生成真实标签"):
+    for pigfarm, farm_data in tqdm(ground_truth_index.groupby('pigfarm_dk'), desc="为每个猪场生成真实标签"):
         # 获取排序后的数据
         farm_data_sorted = farm_data.sort_values('stats_dt')
         for idx, row in farm_data_sorted.iterrows():
@@ -173,21 +234,24 @@ def abortion_days_index_sample(eval_running_dt_start=None, eval_running_dt_end=N
                 (farm_data_sorted['stats_dt'] > current_dt) &
                 (farm_data_sorted['stats_dt'] <= current_dt + pd.Timedelta(days=7))
             ]
-            ground_truth_index.loc[idx, 'abort_days_1_7'] = sum(future_1_7['abortion_rate'] > threshold)
+            if len(future_1_7) == 7:
+                ground_truth_index.loc[idx, 'abort_days_1_7'] = sum(future_1_7['abortion_rate'] > threshold)
 
             # 计算未来8-14天的标签
             future_8_14 = farm_data_sorted[
                 (farm_data_sorted['stats_dt'] > current_dt + pd.Timedelta(days=7)) &
                 (farm_data_sorted['stats_dt'] <= current_dt + pd.Timedelta(days=14))
             ]
-            ground_truth_index.loc[idx, 'abort_days_8_14'] = sum(future_8_14['abortion_rate'] > threshold)
+            if len(future_8_14) == 7:
+                ground_truth_index.loc[idx, 'abort_days_8_14'] = sum(future_8_14['abortion_rate'] > threshold)
 
             # 计算未来15-21天的标签
             future_15_21 = farm_data_sorted[
                 (farm_data_sorted['stats_dt'] > current_dt + pd.Timedelta(days=14)) &
                 (farm_data_sorted['stats_dt'] <= current_dt + pd.Timedelta(days=21))
             ]
-            ground_truth_index.loc[idx, 'abort_days_15_21'] = sum(future_15_21['abortion_rate'] > threshold)
+            if len(future_15_21) == 7:
+                ground_truth_index.loc[idx, 'abort_days_15_21'] = sum(future_15_21['abortion_rate'] > threshold)
 
     # 只保留评估期内的数据
     ground_truth_index = ground_truth_index[
@@ -195,8 +259,13 @@ def abortion_days_index_sample(eval_running_dt_start=None, eval_running_dt_end=N
         (ground_truth_index['stats_dt'] <= eval_end)
     ]
 
+    # 删除空值的行
+    ground_truth_index.dropna(subset=['abort_days_1_7', 'abort_days_8_14', 'abort_days_15_21'], inplace=True)
+
     # 创建index_ground_truth
-    index_ground_truth = ground_truth_index[['stats_dt', 'pigfarm_dk', 'abort_days_1_7', 'abort_days_8_14', 'abort_days_15_21']].copy()
+    index_ground_truth = ground_truth_index[['stats_dt', 'pigfarm_dk', 
+                                             'abort_days_1_7', 'abort_days_8_14', 'abort_days_15_21', 
+                                             'single_influence_1_7', 'single_influence_8_14', 'single_influence_15_21']].copy()
     
     # 创建index_sample
     index_sample = ground_truth_index[['stats_dt', 'pigfarm_dk']].copy()
@@ -206,5 +275,14 @@ def abortion_days_index_sample(eval_running_dt_start=None, eval_running_dt_end=N
 
 
 if __name__ == "__main__":
-    index_sample, index_ground_truth = abortion_days_index_sample('2024-03-01', '2024-03-30')
-    index_ground_truth.to_csv('index_ground_truth.csv', index=False, encoding='utf-8')
+    for start_date, end_date in [
+        # ('2024-03-01', '2024-03-30'),
+        ('2024-06-01', '2024-06-30'),
+        # ('2024-09-01', '2024-09-30'),
+        # ('2024-12-01', '2024-12-30'),
+    ]:
+        index_sample, index_ground_truth = abortion_abnormal_index_sample(start_date, end_date)
+        # index_sample, index_ground_truth = abortion_days_index_sample(start_date, end_date)
+        index_sample.to_csv(f'index_sample_{start_date}.csv', index=False, encoding='utf-8-sig')
+        index_ground_truth.to_csv(f'index_ground_truth_{start_date}.csv', index=False, encoding='utf-8-sig')
+

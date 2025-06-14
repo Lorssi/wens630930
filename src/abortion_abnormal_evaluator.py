@@ -6,7 +6,7 @@ import argparse
 
 # todo 之后工程化
 from abortion_abnormal.eval.main import AbortionAbnormalPredictEval
-from abortion_abnormal.module import data_pre_process_main
+from abortion_abnormal.module import data_pre_process_main, eval_main
 
 
 
@@ -70,10 +70,8 @@ class AbortionAbnormalEvaluator:
             # main_predict(predict_running_dt=predict_running_dt_end, predict_interval=predict_interval)
 
             logger.info('----------------------------------------测试模型评估----------------------------------------')
-            # todo 模型评估模块
-            abortion_abnormal_eval = AbortionAbnormalPredictEval(logger=logger)
-            abortion_abnormal_eval.build_eval_set(eval_running_dt=predict_running_dt, eval_interval=predict_interval)
-            abortion_abnormal_eval.eval_with_index_sample()
+            eval_main_instance = eval_main.EvalMain(eval_running_dt=predict_running_dt, eval_interval=predict_interval, logger=logger)
+            eval_main_instance.eval_data()
             logger.info( '----------------------------------------测试流程运行结束----------------------------------------')
             return "success"
 
@@ -84,47 +82,30 @@ class AbortionAbnormalEvaluator:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='This is a simple command line tool.')
-    parser.add_argument('--predict_running_dt', default="2024-06-13", type=str, help='Input eval running dt end')
-    parser.add_argument('--predict_interval', default=28, type=int, help='predict_interval')
+    parser.add_argument('--predict_running_dt', default="2024-11-30", type=str, help='Input eval running dt end')
+    parser.add_argument('--predict_interval', default=30, type=int, help='predict_interval')
     parser.add_argument('--train_running_dt_end', default="2024-05-13", type=str, help='Input train running dt end')
     args = parser.parse_args()
 
+    predict_running_dt = args.predict_running_dt
+    print(f"predict_running_dt: {predict_running_dt}")
+
     # & D:/data/anaconda3/envs/leb/python.exe d:/data/VSCode/wens630930/src/abortion_abnormal_evaluator.py --predict_running_dt '2024-11-30' --predict_interval 30
 
-    # task_param = {
-    #     'predict_running_dt': args.predict_running_dt,
-    #     'predict_interval': args.predict_interval,
-    #     'train_running_dt_end': args.train_running_dt_end,
-    # }
-
-    # 统一 todo 将default改为流产率预测类
-    # task_param = {
-    #     'predict_running_dt': '2024-06-13',
-    #     'predict_interval': 21,
-    #     'train_running_dt': '2024-05-15',
-    #     # 'train_interval': 100
-    # }
-
-    # task_param = {
-    #     'predict_running_dt': '2025-03-01',
-    #     'predict_interval': 90,
-    #     'train_running_dt': '2024-10-01',
-    #     'train_interval': 100
-    # }
-
     # predict_running_dts = ['2024-02-29', '2024-05-31', '2024-08-31', '2024-11-30']
-    predict_running_dts = ['2024-02-29']
+    # predict_running_dt = '2024-11-30'
+    # feature_list = ['intro_source_num_90d', 'intro_source_is_single', 'intro_times_30d', 'intro_times_90d', 'intro_days_30d', 'intro_days_90d']
+    # feature_list = ['intro_days_90d']
     
-    for predict_running_dt in predict_running_dts:
-        task_param = {
-            'predict_running_dt': predict_running_dt,
-            'predict_interval': 30,
-            # 'train_running_dt': '2024-10-01',
-            # 'train_interval': 100
-        }
+    task_param = {
+        'predict_running_dt': predict_running_dt,
+        'predict_interval': 30,
+        # 'train_running_dt': '2023-10-01',
+        # 'train_interval': 100
+    }
 
-        # 初始化评测类
-        evaluator = AbortionAbnormalEvaluator(task_param=task_param)
+    # 初始化评测类
+    evaluator = AbortionAbnormalEvaluator(task_param=task_param)
 
-        # 执行评测
-        evaluator.eval_and_post_process()
+    # 执行评测
+    evaluator.eval_and_post_process()
