@@ -126,7 +126,6 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
             for col in cols_to_add:
                 if col in pig_dept.columns:
                     data[f'pig_dept_{col}'] = pig_dept[col]
-        data.to_csv(f'{config.EvalFilename.version}_{config.EvalFilename.feature}_{config.EvalFilename.eval_date}.csv', index=False, encoding='utf-8', float_format="%.4f")
 
 
         # 保存结果
@@ -144,6 +143,8 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
                 l4_results.to_excel(writer, sheet_name='四级组织分类', index=False, float_format="%.4f")
                 abortion_duration_results.to_excel(writer, sheet_name='流产持续时长统计', index=False, float_format="%.4f")
                 abortion_interval_results.to_excel(writer, sheet_name='流产间隔统计', index=False, float_format="%.4f")
+
+        return data
 
 
 # 任务2评估-流产天数预测评估
@@ -241,18 +242,35 @@ class AbortionAbnormalEval(EvalBaseMixin):
     pass
 
 if __name__ == "__main__":
-    print(project_root)
+
+    version = [
+        'v1.0.24',
+        'v1.0.25',
+        'v1.0.26',
+        'v1.0.27',
+        'v1.0.28',
+        'v1.0.29',
+        'v1.0.30',
+        'v1.0.31',
+        'v1.0.32',
+        'v1.0.33',
+    ]
 
     features = [
-        # 'preg_stock_sqty_change_ratio_7d', 'preg_stock_sqty_change_ratio_15d', 
-        # 'reserve_sow_sqty_change_ratio_7d', 'reserve_sow_sqty_change_ratio_15d', 
-        'abnormal_find_days', 'is_not_immu_21d'
-        ]
-
-
-    version = ['v1.0.17', 'v1.0.18']
+        'l3_org_inv_dk',
+        'l4_org_inv_dk',
+        'death_confirm_5_week',
+        'boar_transin_times_30d',
+        'boar_transin_qty_30d',
+        'boar_transin_ratio_30d_1',
+        'boar_transin_ratio_30d_2',
+        'preg_stock_sqty',
+        'month',
+        'useful_feautre_sorrounding_production'
+    ]
 
     for feature, version in zip(features, version):
+        eval_result = pd.DataFrame()
         config.EvalFilename.feature = feature
         config.EvalFilename.version = version
         for (start_date, month) in [
@@ -265,4 +283,7 @@ if __name__ == "__main__":
             config.EvalFilename.eval_date = month
             abortion_abnormal_eval = AbortionAbnormalPredictEval(logger)
             abortion_abnormal_eval.build_eval_set(start_date, 30)
-            abortion_abnormal_eval.eval_with_index_sample()
+            data = abortion_abnormal_eval.eval_with_index_sample()
+            eval_result = pd.concat([eval_result, data], ignore_index=True)
+
+        eval_result.to_csv(f'{config.EvalFilename.version}_nfm_{config.EvalFilename.feature}.csv', index=False, encoding='utf-8', float_format="%.4f")
