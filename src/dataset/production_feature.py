@@ -292,6 +292,11 @@ class ProductionFeature(BaseFeatureDataSet):
         # 按猪场分组并计算7天和15天前的存栏量
         data['reserve_sow_sqty_6d_ago'] = data.groupby('pigfarm_dk')['reserve_sow_sqty'].shift(6)
         data['reserve_sow_sqty_14d_ago'] = data.groupby('pigfarm_dk')['reserve_sow_sqty'].shift(14)
+
+        # 修正：按猪场分组计算30天移动平均值
+        data['reserve_sow_30day_avg'] = data.groupby('pigfarm_dk')['reserve_sow_sqty']\
+            .rolling(window=30, min_periods=30).mean()\
+            .reset_index(level=0, drop=True)
         
         # 计算变化率
         def calculate_change_ratio(row, days):
@@ -395,7 +400,7 @@ class ProductionFeature(BaseFeatureDataSet):
                                    'boar_transin_times_30d', 'boar_transin_qty_30d',
                                    'boar_transin_ratio_30d_1', 'boar_transin_ratio_30d_2',
                                    'preg_stock_sqty_change_ratio_7d', 'preg_stock_sqty_change_ratio_15d','preg_stock_sqty',
-                                   'reserve_sow_sqty_change_ratio_7d', 'reserve_sow_sqty_change_ratio_15d','reserve_sow_sqty',
+                                   'reserve_sow_sqty_change_ratio_7d', 'reserve_sow_sqty_change_ratio_15d','reserve_sow_sqty', 'reserve_sow_30day_avg',
                                    'basesow_sqty_change_ratio_7d', 'basesow_sqty_change_ratio_15d','basesow_sqty',
                                    ] + past_7d_abortion_features
         

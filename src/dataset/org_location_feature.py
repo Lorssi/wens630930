@@ -51,7 +51,7 @@ class OrgLocationFeature(BaseFeatureDataSet):
         self._init_entity_and_features()
 
     def _preprocessing_data(self):
-        org_data = self.org_data[self.entity + ['city', 'l3_org_inv_dk', 'l4_org_inv_dk']].copy()
+        org_data = self.org_data[self.entity + ['city', 'l2_org_inv_nm','l3_org_inv_dk', 'l4_org_inv_dk']].copy()
         org_data = org_data.drop_duplicates(subset=self.entity, keep='first')
         
         # 更新
@@ -86,7 +86,7 @@ class OrgLocationFeature(BaseFeatureDataSet):
         """获取组织特征"""
         org_data = self.org_data.copy()
         
-        self.data = org_data[self.entity + ['city', 'l3_org_inv_dk', 'l4_org_inv_dk']].copy()
+        self.data = org_data[self.entity + ['city', 'l2_org_inv_nm','l3_org_inv_dk', 'l4_org_inv_dk']].copy()
 
     def _post_processing_data(self):
         if self.data.isnull().any().any():

@@ -60,12 +60,12 @@ class ColumnsConfig:
     past_7d_abortion_features = [f'abortion_rate_past_{day + 1}d' for day in range(7)]
     # TRANSFORM_FIT
     DISCRETE_COLUMNS = ['pigfarm_dk','city']
-    CONTINUOUS_COLUMNS = ['check_out_ratio_7d', 'death_confirm_2_week', 'death_confirm_5_week'] + past_7d_abortion_features
+    CONTINUOUS_COLUMNS = ['check_out_ratio_7d', 'death_confirm_2_week', 'reserve_sow_30day_avg'] + past_7d_abortion_features
     INVARIANT_COLUMNS = ['season']
 
     # MODEL_FIT
     MODEL_DISCRETE_COLUMNS = ['pigfarm_dk','city','season']
-    MODEL_CONTINUOUS_COLUMNS = ['check_out_ratio_7d', 'death_confirm_2_week', 'death_confirm_5_week'] + past_7d_abortion_features
+    MODEL_CONTINUOUS_COLUMNS = ['check_out_ratio_7d', 'death_confirm_2_week', 'reserve_sow_30day_avg'] + past_7d_abortion_features
 
 
     INDEX_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abortion_rate']

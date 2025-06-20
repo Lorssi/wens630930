@@ -34,7 +34,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         self.sorrounding_feature_data = pd.read_csv(base_config.FeatureData.SORROUNDING_FEATURE_DATA.value)
         self.rule_baseline_feature_data = pd.read_csv(base_config.FeatureData.RULE_BASELINE_FEATURE_DATA.value)
         self.abnormal_boar_feature_data = pd.read_csv(base_config.FeatureData.ABNORMAL_BOAR_FEATURE_DATA.value)
-        self.immune_feature_data = pd.read_csv(base_config.FeatureData.IMMUNE_FEATURE_DATA.value)
+        # self.immune_feature_data = pd.read_csv(base_config.FeatureData.IMMUNE_FEATURE_DATA.value)
 
         self.file_name = None  # 文件名
         self.index_data = pd.DataFrame()  # 索引数据

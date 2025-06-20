@@ -103,12 +103,12 @@ def predict_model(model, predict_loader, device, predict_index):
     logger.info("开始多标签预测...")
     
     # 加载训练好的模型权重
-    if os.path.exists(config.MODEL_SAVE_PATH):
-        model.load_state_dict(torch.load(config.MODEL_SAVE_PATH, map_location=device))
-        logger.info(f"成功加载模型权重: {config.MODEL_SAVE_PATH}")
-    else:
-        logger.error(f"未找到模型权重文件: {config.MODEL_SAVE_PATH}")
-        return None
+    # if os.path.exists(config.MODEL_SAVE_PATH):
+    #     model.load_state_dict(torch.load(config.MODEL_SAVE_PATH, map_location=device))
+    #     logger.info(f"成功加载模型权重: {config.MODEL_SAVE_PATH}")
+    # else:
+    #     logger.error(f"未找到模型权重文件: {config.MODEL_SAVE_PATH}")
+    #     return None
     
     # 切换到评估模式
     model.eval()
@@ -261,7 +261,7 @@ if __name__ == "__main__":
         'city': feature_dict[Categorical_feature[1]].category_encode.size,
         'season': 4,
     }
-    model = Has_Risk_NFM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现
+    model = Has_Risk_NFM_MultiLabel_Wider(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 
