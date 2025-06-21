@@ -302,6 +302,11 @@ if __name__ == "__main__":
     train_index_data = index_sample_obj.build_train_dataset(config.TRAIN_RUNNING_DT, config.TRAIN_INTERVAL)
     logger.info("----------Generating train dataset----------")
     train_connect_feature_data = connect_feature_obj.build_train_dataset(input_dataset=train_index_data.copy(), param=None)
+    logger.info(f"train_connect_feature_data {train_connect_feature_data.columns}")
+
+    # 筛选组织部
+    org_l1_l2_l3 = ['猪业一部', '猪业二部', '猪业三部']
+    train_connect_feature_data = train_connect_feature_data[train_connect_feature_data['l2_org_inv_nm'].isin(org_l1_l2_l3)]
 
     # 1. 加载和基础预处理数据
     # 生成特征

@@ -443,7 +443,6 @@ if __name__ == "__main__":
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
         'city': feature_dict[Categorical_feature[1]].category_encode.size,
-        'month': 12,
         'season': 4,
     }
     model = Days_NFM(params).to(config.DEVICE) # 等待模型实现

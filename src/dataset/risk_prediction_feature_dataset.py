@@ -34,7 +34,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         self.sorrounding_feature_data = pd.read_csv(base_config.FeatureData.SORROUNDING_FEATURE_DATA.value)
         self.rule_baseline_feature_data = pd.read_csv(base_config.FeatureData.RULE_BASELINE_FEATURE_DATA.value)
         self.abnormal_boar_feature_data = pd.read_csv(base_config.FeatureData.ABNORMAL_BOAR_FEATURE_DATA.value)
-        self.immune_feature_data = pd.read_csv(base_config.FeatureData.IMMUNE_FEATURE_DATA.value)
+        # self.immune_feature_data = pd.read_csv(base_config.FeatureData.IMMUNE_FEATURE_DATA.value)
 
         self.file_name = None  # 文件名
         self.index_data = pd.DataFrame()  # 索引数据
@@ -340,9 +340,7 @@ class RiskPredictionFeatureDataset(BaseDataSet):
         logger.info("-----Connecting feature: rule baseline fea")
         self._get_rule_baseline_feature()
         logger.info("-----Connecting feature: abnormal boar fea")
-        # self._get_abnormal_feature()
-        logger.info("-----Connecting feature: immune fea")
-        self._get_immune_feature()
+        self._get_abnormal_feature()
         logger.info("-----Postprocessing Data-----")
         self._post_processing_train_data()
         self.dump_dataset(risk_config.algo_interim_dir / self.file_name)

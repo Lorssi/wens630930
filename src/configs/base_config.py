@@ -98,15 +98,15 @@ class ModulePath(Enum):
          'file_type': 'csv',
          'main_class_name': 'RulBaselineFeature',
          'params': {}},
-        {'dataset_name': 'dataset.abnormal_breed_sow_feature',
-         'file_type': 'csv',
-         'main_class_name': 'AbnormalBreedSowFeature',
-         'params': {}},
-        # 免疫特征
-        {'dataset_name': 'dataset.immune_feature',
-         'file_type': 'csv',
-         'main_class_name': 'ImmuneFeature',
-         'params': {}},
+        # {'dataset_name': 'dataset.abnormal_breed_sow_feature',
+        #  'file_type': 'csv',
+        #  'main_class_name': 'AbnormalBreedSowFeature',
+        #  'params': {}},
+        # # 免疫特征
+        # {'dataset_name': 'dataset.immune_feature',
+        #  'file_type': 'csv',
+        #  'main_class_name': 'ImmuneFeature',
+        #  'params': {}},
     ]
     # 训练模块
     algo_list = [

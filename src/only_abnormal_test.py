@@ -121,43 +121,75 @@ def split_data(data_transformed_masked_null, y):
 
 
 # 基于概率的随机采样计算
-def sample_probability(labels):
+def pick_normal2abnormal(X, y):
     """
-    为不平衡的数据集创建加权随机采样器
+    筛选从正常变为异常的样本
     
-    Args:
-        labels (np.ndarray): 标签数组，已经是numpy格式
+    参数:
+    X: 特征数据DataFrame
+    y: 标签数据DataFrame
+    
+    返回:
+    从正常到异常的样本DataFrame
+    """
+    # 合并特征和标签数据
+    df = pd.concat([X, y], axis=1)
+    
+    # 定义时段和对应的标签列
+    periods = [(1, 7), (8, 14), (15, 21)]
+    abort_columns = ['abort_{0}_{1}'.format(left, right) for left, right in periods]
+    
+    # 确保日期列存在
+    if 'stats_dt' not in X.columns:
+        logger.error("数据中缺少date_code列，无法按日期排序")
+        return pd.DataFrame()
+    
+    # 确保猪场列存在
+    if 'pigfarm_dk' not in X.columns:
+        logger.error("数据中缺少pigfarm_dk列，无法按猪场分组")
+        return pd.DataFrame()
+    
+    # 存储所有需要返回的样本索引
+    all_indices_to_mark = set()
+    
+    # 按猪场分组
+    farm_groups = df.groupby('pigfarm_dk')
+    
+    # 遍历每个猪场
+    for farm_id, farm_df in farm_groups:
+        # 按日期排序
+        farm_df = farm_df.sort_values('stats_dt')
         
-    Returns:
-        WeightedRandomSampler: 基于类别权重的采样器
-    """
-    # 确保输入是numpy数组
-    if not isinstance(labels, np.ndarray):
-        labels = np.array(labels)
-    labels = labels.astype(int)  # 确保标签是整数类型
-
-    # 统计每个类别的样本数量
-    unique_classes = np.unique(labels)
-    class_sample_count = np.array([len(np.where(labels == t)[0]) for t in unique_classes])
+        # 遍历每个时段标签
+        for abort_col in abort_columns:
+            # 查找从正常变为异常的样本
+            for i in range(len(farm_df) - 1):
+                if farm_df.iloc[i][abort_col] == 0 and farm_df.iloc[i+1][abort_col] == 1:
+                    # 找到了从正常到异常的转变
+                    # 获取当前位置和周围的记录 (t-1, t, t+1, t+2)
+                    start_idx = max(0, i - 1)
+                    end_idx = min(len(farm_df), i + 3)  # +3因为切片是不包含end_idx的
+                    
+                    # 获取相关位置对应的原始数据索引
+                    indices_to_mark = farm_df.index[start_idx:end_idx]
+                    all_indices_to_mark.update(indices_to_mark)
     
-    # 计算类别权重（样本量少的类别权重大）
-    weight = 1. / class_sample_count
-    
-    # 为每个样本分配权重
-    samples_weight = np.array([weight[np.where(unique_classes == t)[0][0]] for t in labels])
-    
-    # 转换为PyTorch张量
-    samples_weight = torch.from_numpy(samples_weight)
-    samples_weight = samples_weight.double()
-    
-    # 创建采样器
-    sampler = WeightedRandomSampler(
-        weights=samples_weight,
-        num_samples=len(samples_weight),
-        replacement=True
+    # 直接返回所有符合条件的样本
+    normal2abnormal_samples = df.loc[list(all_indices_to_mark)]
+    normal2abnormal_samples = normal2abnormal_samples.reset_index(drop=True)
+    normal2abnormal_samples.to_csv(
+        "normal2abnormal_samples.csv",
+        index=False,
+        encoding='utf-8-sig'
     )
+
+    X = normal2abnormal_samples[ColumnsConfig.feature_columns]
+    y = normal2abnormal_samples[abort_columns]
     
-    return sampler
+    logger.info(f"共找到 {len(normal2abnormal_samples)} 个从正常到异常的样本记录")
+    logger.info(f"占总样本数的 {(len(normal2abnormal_samples)/len(df))*100:.2f}%")
+    
+    return X, y, normal2abnormal_samples
 
 def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, device, early_stopping=None):
     logger.info("开始训练...")
@@ -319,6 +351,8 @@ if __name__ == "__main__":
     logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
     logger.info(f"X,y特征数据形状为：{X.shape}， 标签数据形状为：{y.shape}")
     
+    X, y, _ = pick_normal2abnormal(X, y)  # 筛选从正常变为异常的样本
+
     # transformer
     if X is None:
         logger.error("特征数据加载失败，程序退出。")

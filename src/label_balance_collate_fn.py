@@ -47,26 +47,40 @@ if torch.cuda.is_available():
 # 初始化日志
 logger = setup_logger(logger_config.TRAIN_LOG_FILE_PATH, logger_name="TrainLogger")
 
-def _collate_fn(batch):
+def _collate_fn(batch, negative_pool=None):
     # 初始化列表
     features_list = []
-    
-    # 多标签任务（前三个标签）
     multi_label_list = []
     
+    # 计算标签列名称（避免重复计算）
+    periods = [(1, 7), (8, 14), (15, 21)]
+    has_risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) 
+                           for left, right in periods]
+    
+    # 遍历正样本批次
     for feature, label in batch:
-        # 添加特征
+        # 添加正样本
         features_list.append(feature)
+        multi_label_list.append(label)
         
-        # 多标签任务（前三个）- 需要作为一个向量
-        multi_label = label
-        multi_label_list.append(multi_label)
+        # 如果提供了负样本池，从中随机选择一个负样本
+        if negative_pool is not None and len(negative_pool) > 0:
+            # 随机选择一个负样本索引
+            neg_idx = np.random.randint(0, len(negative_pool))
+            
+            # 从DataFrame中获取负样本特征和标签
+            neg_row = negative_pool.iloc[neg_idx]
+            neg_feature = neg_row.drop(has_risk_label_list).values
+            neg_label = neg_row[has_risk_label_list].values
+            
+            # 添加负样本
+            features_list.append(neg_feature)
+            multi_label_list.append(neg_label)
     
     # 转换为张量
     features_tensor = torch.tensor(np.array(features_list), dtype=torch.float32)
-    multi_label_tensor = torch.tensor(np.array(multi_label_list), dtype=torch.float32)  # 多标签用float
+    multi_label_tensor = torch.tensor(np.array(multi_label_list), dtype=torch.float32)
     
-    # 返回特征和所有标签
     return features_tensor, multi_label_tensor
 
     # 针对空值做处理
@@ -159,39 +173,68 @@ def sample_probability(labels):
     
     return sampler
 
-def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, device, early_stopping=None):
+def train_model(model, train_loaders, val_loaders, criterion, optimizer, num_epochs, device, early_stopping=None):
     logger.info("开始训练...")
     # scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=1)
     
-    best_val_metrics = None
+    abort_1_7_banlanced_train_lodaer, abort_8_14_banlanced_train_lodaer, abort_15_21_banlanced_train_lodaer = train_loaders
+    abort_1_7_banlanced_val_lodaer, abort_8_14_banlanced_val_lodaer, abort_15_21_banlanced_val_lodaer = val_loaders
+
+    label_names = ['abort_1_7', 'abort_8_14', 'abort_15_21']
+    def cycle_iterator(iterable): # 当批次数最小的loader迭代完时，重新开始迭代
+        """创建一个循环迭代器，当迭代完成时重新开始"""
+        iterator = iter(iterable)
+        while True:
+            try:
+                yield next(iterator)
+            except StopIteration:
+                iterator = iter(iterable)
+                yield next(iterator)
     
     for epoch in range(num_epochs):
         model.train()
-        train_loss = 0.0
-        for batch_idx, (features, targets) in enumerate(train_loader):
-            features, targets = features.to(device), targets.to(device)  # 将特征和标签移至目标设备
-            # label
-
+        total_loss = 0
+        batch_count = 0
+        
+        # 获取最长的数据集长度
+        max_batches = max(len(loader) for loader in train_loaders)
+        
+        # 为每个dataloader创建循环迭代器
+        iterators = [cycle_iterator(loader) for loader in train_loaders]
+        
+        # 训练max_batches次
+        for _ in range(max_batches):
             optimizer.zero_grad()
-            outputs = model(features)
-            loss = criterion(outputs, targets)
-            loss.backward()
-
+            combined_loss = 0
+            
+            # 从每个loader获取一个batch
+            for i, iterator in enumerate(iterators):
+                batch_x, batch_y = next(iterator)
+                batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+                
+                outputs = model(batch_x)
+                # 获取当前任务的预测和标签
+                current_pred = outputs[:, i]
+                current_label = batch_y[:, i]  # 假设batch_y包含所有标签
+                
+                # 计算当前任务的损失
+                loss = criterion(current_pred, current_label)
+                combined_loss += loss
+            
+            # 计算平均损失（除以标签数量）
+            combined_loss = combined_loss / len(iterators)  # 除以3
+            # 反向传播总损失
+            combined_loss.backward()
             optimizer.step()
-
-            train_loss += loss.item()
-
-            # if batch_idx % 100 == 0: # 每100个batch打印一次日志
-            #     logger.info(f"Epoch [{epoch+1}/{num_epochs}], Batch [{batch_idx+1}/{len(train_loader)}], Loss: {loss.item():.4f}")
-
-        avg_train_loss = train_loss / len(train_loader)
+            
+            total_loss += combined_loss.item()
+            batch_count += 1
+        
+        avg_train_loss = total_loss / batch_count
 
         # --- 验证阶段 ---
-        avg_val_loss, metrics = eval(model, val_loader, criterion, device)
-        
-        # 打印训练指标
+        avg_val_loss, metrics = evaluate_model(model, val_loaders, criterion, device)
         logger.info(f"Epoch [{epoch+1}/{num_epochs}], 训练集平均损失：{avg_train_loss:.4f}, 验证集平均损失: {avg_val_loss:.4f}")
-        logger.info(f"Epoch [{epoch+1}/{num_epochs}], 准确率: {metrics['accuracy']:.4f}, 精确率: {metrics['precision']:.4f}, 召回率: {metrics['recall']:.4f}, F1: {metrics['f1']:.4f}, AUC: {metrics['auc']:.4f}")
         
         # --- 早停检查 ---
         if early_stopping is not None:
@@ -208,84 +251,80 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         model.load_state_dict(torch.load(early_stopping.path))
     
     # --- 最终评估 ---
-    avg_train_loss, train_metrics = eval(model, train_loader, criterion, device)
-    avg_val_loss, val_metrics = eval(model, val_loader, criterion, device)
+    avg_train_loss, train_metrics = evaluate_model(model, train_loaders, criterion, device)
+    avg_val_loss, val_metrics = evaluate_model(model, val_loaders, criterion, device)
     
     # --- 打印最终评估结果 ---
     logger.info(f"最终评估 - 训练集损失: {avg_train_loss:.4f}, 验证集损失: {avg_val_loss:.4f}")
-    logger.info(f"最终评估 - 训练集: 准确率: {train_metrics['accuracy']:.4f}, 精确率: {train_metrics['precision']:.4f}, 召回率: {train_metrics['recall']:.4f}, F1: {train_metrics['f1']:.4f}, AUC: {train_metrics['auc']:.4f}")
-    logger.info(f"最终评估 - 验证集: 准确率: {val_metrics['accuracy']:.4f}, 精确率: {val_metrics['precision']:.4f}, 召回率: {val_metrics['recall']:.4f}, F1: {val_metrics['f1']:.4f}, AUC: {val_metrics['auc']:.4f}")
-    
     logger.info("训练完成.")
+
     return model
 
-def eval(model, val_loader, criterion, device):
+def evaluate_model(model, val_loaders, criterion, device):
     """
-    评估模型在验证集上的性能（多标签版本）
+    评估模型在各个标签上的性能
+    
+    参数:
+    - model: 训练好的多标签模型
+    - val_loaders: 三个平衡验证集的数据加载器列表 [val_loader_1_7, val_loader_8_14, val_loader_15_21]
+    - complete_val_loader: 完整验证集(可选)
+    - criterion: 损失函数 (BCEWithLogitsLoss)
+    - device: 计算设备
     """
     model.eval()
-    val_loss = 0.0
-    all_preds = []
-    all_targets = []
-    all_probs = []
+    label_names = ['abort_1_7', 'abort_8_14', 'abort_15_21']
+    metrics = {}
     
-    with torch.no_grad():
-        for features, targets in val_loader:
-            # 获取批次数据并移至目标设备
-            features, targets = features.to(device), targets.to(device)  # 将特征和标签移至目标设备
-            
-            # 前向传播
-            outputs = model(features)
-            loss = criterion(outputs, targets)
-            val_loss += loss.item()
-            
-            # 获取预测结果 - 使用sigmoid而非softmax
-            probs = torch.sigmoid(outputs)
-            preds = (probs > 0.5).float()  # 二值化，阈值为0.5
-            
-            # 收集结果
-            all_preds.append(preds.cpu().numpy())
-            all_targets.append(targets.cpu().numpy())
-            all_probs.append(probs.cpu().numpy())
+    # 1. 在每个平衡验证集上分别评估对应的标签
+    print("=" * 50)
+    print("在平衡验证集上评估各标签性能:")
     
-    # 计算平均损失
-    avg_val_loss = val_loss / len(val_loader)
-    
-    # 转换为numpy数组
-    all_preds = np.vstack(all_preds)
-    all_targets = np.vstack(all_targets)
-    all_probs = np.vstack(all_probs)
-    
-    # 计算多标签指标
-    accuracy = accuracy_score(all_targets, all_preds)
-    precision = precision_score(all_targets, all_preds, average='macro', zero_division=0)
-    recall = recall_score(all_targets, all_preds, average='macro', zero_division=0)
-    f1 = 2 * (precision * recall) / (precision + recall + 1e-10)
-    
-    # 多标签 AUC
-    try:
-        # 对每个标签分别计算ROC AUC，然后取平均
-        auc_scores = []
-        for i in range(all_probs.shape[1]):
-            # 只有当某个标签既有正例又有负例时才计算AUC
-            if len(np.unique(all_targets[:, i])) > 1:
-                auc_scores.append(roc_auc_score(all_targets[:, i], all_probs[:, i]))
+    total_loss = 0 # 累加所有标签的平均损失
+    for i, (val_loader, label_name) in enumerate(zip(val_loaders, label_names)):
+        task_loss = 0
+        all_preds = []
+        all_labels = []
         
-        auc = np.mean(auc_scores) if auc_scores else 0.0
-    except ValueError:
-        auc = 0.0
-        logger.warning("无法计算AUC，可能是某些类别样本数太少")
+        with torch.no_grad():
+            for batch_x, batch_y in val_loader:
+                batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+                outputs = model(batch_x)
+                
+                # 只评估当前任务的标签
+                current_pred = outputs[:, i]
+                current_label = batch_y[:, i]
+                
+                loss = criterion(current_pred, current_label)
+                task_loss += loss.item()
+                
+                # 收集预测和真实标签
+                pred_probs = torch.sigmoid(current_pred).cpu().numpy()
+                true_labels = current_label.cpu().numpy()
+                
+                all_preds.extend(pred_probs)
+                all_labels.extend(true_labels)
+        
+        # 计算评估指标
+        auc = roc_auc_score(all_labels, all_preds)
+        binary_preds = [1 if p >= 0.5 else 0 for p in all_preds]
+        precision = precision_score(all_labels, binary_preds)
+        recall = recall_score(all_labels, binary_preds)
+        accuracy = accuracy_score(all_labels, binary_preds)
+        
+        metrics[label_name] = {
+            'loss': task_loss/len(val_loader),
+            'auc': auc,
+            'precision': precision,
+            'recall': recall,
+            'accuracy': accuracy
+        }
+        
+        total_loss += task_loss /  len(val_loader) # 累加当前标签的平均损失
+        print(f"{label_name} - 损失: {task_loss/len(val_loader):.4f}, AUC: {auc:.4f}, "
+              f"精确率: {precision:.4f}, 召回率: {recall:.4f}, 准确率: {accuracy:.4f}")
     
-    metrics = {
-        'val_loss': avg_val_loss,
-        'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1': f1,
-        'auc': auc
-    }
-    
-    return avg_val_loss, metrics
+    avg_loss = total_loss / len(label_names) # 计算所有标签的整体平均损失
+    return avg_loss, metrics
 
 if __name__ == "__main__":
     logger.info("开始数据加载和预处理...")
@@ -390,11 +429,28 @@ if __name__ == "__main__":
     # 5. 创建 PyTorch Dataset 和 DataLoader
     periods = [(1, 7), (8, 14), (15, 21)]
     has_risk_label_list = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
-    train_dataset = MultiTaskAndMultiLabelDataset(train_df, label=has_risk_label_list)
+
+    train_df_positive_1_7 = train_df[train_df['abort_1_7'] == 1].reset_index(drop=True)  # 只保留有风险的样本
+    train_df_negative_1_7 = train_df[train_df['abort_1_7'] == 0].reset_index(drop=True)  # 只保留无风险的样本
+    train_df_positive_8_14 = train_df[train_df['abort_8_14'] == 1].reset_index(drop=True)  # 只保留有风险的样本
+    train_df_negative_8_14 = train_df[train_df['abort_8_14'] == 0].reset_index(drop=True)  # 只保留无风险的样本
+    train_df_positive_15_21 = train_df[train_df['abort_15_21'] == 1].reset_index(drop=True)  # 只保留有风险的样本
+    train_df_negative_15_21 = train_df[train_df['abort_15_21'] == 0].reset_index(drop=True)  # 只保留无风险的样本
+
+    train_dataset_1_7 = MultiTaskAndMultiLabelDataset(train_df_positive_1_7, label=has_risk_label_list)
+    train_dataset_8_14 = MultiTaskAndMultiLabelDataset(train_df_positive_8_14, label=has_risk_label_list)
+    train_dataset_15_21 = MultiTaskAndMultiLabelDataset(train_df_positive_15_21, label=has_risk_label_list)
+
     val_dataset = MultiTaskAndMultiLabelDataset(val_df, label=has_risk_label_list)
 
-    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
+    train_loader_1_7 = DataLoader(train_dataset_1_7, batch_size=config.BATCH_SIZE, shuffle=True, collate_fn=lambda batch: _collate_fn(batch, train_df_negative_1_7),num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
+    train_loader_8_14 = DataLoader(train_dataset_8_14, batch_size=config.BATCH_SIZE, shuffle=True, collate_fn=lambda batch: _collate_fn(batch, train_df_negative_8_14),num_workers=config.NUM_WORKERS)
+    train_loader_15_21 = DataLoader(train_dataset_15_21, batch_size=config.BATCH_SIZE, shuffle=True, collate_fn=lambda batch: _collate_fn(batch, train_df_negative_15_21),num_workers=config.NUM_WORKERS)
+    
     val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS)
+
+    train_lodaers = (train_loader_1_7, train_loader_8_14, train_loader_15_21)
+    val_loaders = (val_loader, val_loader, val_loader)  # 验证集使用相同的loader
     logger.info("数据加载器准备完毕.")
 
     # --- 模型、损失函数、优化器 ---
@@ -426,7 +482,7 @@ if __name__ == "__main__":
     )
 
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
-    trained_model = train_model(model, train_loader, val_loader, criterion, optimizer, config.NUM_EPOCHS, config.DEVICE, early_stopping=early_stopping)
+    trained_model = train_model(model, train_lodaers, val_loaders, criterion, optimizer, config.NUM_EPOCHS, config.DEVICE, early_stopping=early_stopping)
 
 
     # --- 模型评估 (可选，在测试集上) ---
