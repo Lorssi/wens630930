@@ -99,15 +99,16 @@ def mask_feature_null(data = None, mode='train'):
     return data_transformed_Mask_Null
 
 
-def predict_model(model, predict_loader, device, predict_index):
+def predict_model(model, predict_loader, device, predict_index, pigfarm_dk=None):
     logger.info("开始多标签预测...")
     
     # 加载训练好的模型权重
-    if os.path.exists(config.MODEL_SAVE_PATH):
-        model.load_state_dict(torch.load(config.MODEL_SAVE_PATH, map_location=device))
-        logger.info(f"成功加载模型权重: {config.MODEL_SAVE_PATH}")
+    single_model_path = config.SINGLE_MODELS_DIR / f"model_{pigfarm_dk}.pth"
+    if os.path.exists(single_model_path):
+        model.load_state_dict(torch.load(single_model_path, map_location=device))
+        logger.info(f"成功加载模型权重: {single_model_path}")
     else:
-        logger.error(f"未找到模型权重文件: {config.MODEL_SAVE_PATH}")
+        logger.error(f"未找到模型权重文件: {single_model_path}")
         return None
     
     # 切换到评估模式
@@ -168,10 +169,12 @@ def predict_model(model, predict_loader, device, predict_index):
     
     return predict_index
 
-if __name__ == "__main__":
+def main(pigfarms=None):
     logger.info("开始数据加载和预处理...")
     index_df = pd.read_csv(config.main_predict.PREDICT_INDEX_TABLE, encoding='utf-8-sig')
-    index_df = index_df[index_df['pigfarm_dk'] == 'bDoAAKurSXDM567U']
+
+    # index_df = index_df[index_df['pigfarm_dk'] == pigfarm_dk]
+
     if index_df is None:
         logger.error("索引数据加载失败，程序退出。")
         exit()
@@ -203,7 +206,7 @@ if __name__ == "__main__":
     predict_connect_feature_data = prdict_connect_feature_data.reset_index(drop=True)
     logger.info(f"预测特征数据的列为：{predict_connect_feature_data.columns}")
 
-    predict_index_label = index_df.copy()
+    # predict_index_label = index_df.copy()
     predict_connect_feature_data.to_csv(
         DataPathConfig.PREDICT_INDEX_MERGE_FEATURE_DATA_SAVE_PATH,
         index=False,
@@ -215,72 +218,119 @@ if __name__ == "__main__":
         logger.error("特征数据加载失败，程序退出。")
         exit()
 
-    index_merge_df = predict_connect_feature_data[ColumnsConfig.feature_columns]
-    with open(config.TRANSFORMER_SAVE_PATH, "r+") as dump_file:
-        transform = AbortionPredictionTransformPipeline.from_json(dump_file.read())
-    transformed_feature_df = transform.transform(input_dataset=index_merge_df)
-    logger.info(f"特征转换完成，转换后的数据行数为：{len(transformed_feature_df)}")
+    for i, pigfarm_dk in enumerate(pigfarms):
+        logger.info(f"开始处理猪场 {pigfarm_dk} 的数据...")
+        logger.info(f"当前处理第 {i+1}/{len(pigfarms)} 个猪场")
+        filtered_data = predict_connect_feature_data[predict_connect_feature_data['pigfarm_dk'] == pigfarm_dk]
+        if filtered_data.empty:
+            logger.warning(f"猪场 {pigfarm_dk} 的数据为空，跳过处理。")
+            continue
+        predict_index_label = index_df[index_df['pigfarm_dk'] == pigfarm_dk].copy()
 
-    predict_X = transformed_feature_df.copy()
-    predict_X = predict_X[ColumnsConfig.feature_columns]
+        filtered_data = filtered_data.reset_index(drop=True)
+        logger.info(f"过滤后的数据行数为：{len(filtered_data)}")
+        logger.info(f"过滤后的数据列为：{filtered_data.columns}")
+        predict_index_label = predict_index_label.reset_index(drop=True)
 
-    # 生成mask列
-    transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
-    transformed_masked_null_predict_X.fillna(0, inplace=True)  # 填充空值为0
-    logger.info(f"data_transformed_masked_null数据字段为：{transformed_masked_null_predict_X.columns}")
-    logger.info(f"data_transformed_masked_null数据行数为：{len(transformed_masked_null_predict_X)}")
-    
-    transformed_masked_null_predict_X.to_csv(
-        DataPathConfig.PREDICT_DATA_TRANSFORMED_MASK_NULL_PREDICT_PATH,
-        index=False,
-        encoding='utf-8-sig'
-    )
+        index_merge_df = filtered_data[ColumnsConfig.feature_columns]
 
-    # predict_index_df = predict_index_label[['stats_dt', 'pigfarm_dk', ColumnsConfig.HAS_RISK_LABEL]].reset_index(drop=True)
+        if '/' in pigfarm_dk:
+            pigfarm_dk = pigfarm_dk.replace('/', '@')
+        single_transformer_path = config.SINGLE_MODELS_DIR / f"transformer_{pigfarm_dk}.json"
 
-    # train_X, train_y = create_sequences(train_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
-    # test_X, test_y = create_sequences(val_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
-    # logger.info(f"训练集X形状为：{train_X}")
-    # logger.info(f"训练集y形状为：{train_y}")
-    # logger.info("数据预处理完成.")
+        # 添加文件存在检查
+        if not os.path.exists(single_transformer_path):
+            logger.warning(f"未找到猪场 {pigfarm_dk} 的转换器文件：{single_transformer_path}，跳过处理。")
+            continue
 
-    # 5. 创建 PyTorch Dataset 和 DataLoader
-    predict_dataset = MultiTaskAndMultiLabelPredictDataset(transformed_masked_null_predict_X)
+        with open(single_transformer_path, "r+") as dump_file:
+            transform = AbortionPredictionTransformPipeline.from_json(dump_file.read())
+        transformed_feature_df = transform.transform(input_dataset=index_merge_df)
+        logger.info(f"特征转换完成，转换后的数据行数为：{len(transformed_feature_df)}")
 
-    predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
-    logger.info("数据加载器准备完毕.")
+        predict_X = transformed_feature_df.copy()
+        predict_X = predict_X[ColumnsConfig.feature_columns]
 
-    # --- 模型、损失函数、优化器 ---
-    feature_dict = transform.features.features
-    Categorical_feature = ColumnsConfig.DISCRETE_COLUMNS # 离散值字段
-    params = {
-        'model_discrete_columns': ColumnsConfig.MODEL_DISCRETE_COLUMNS,
-        'model_continuous_columns': ColumnsConfig.MODEL_CONTINUOUS_COLUMNS,
-        'dropout': config.DROPOUT,
+        # 生成mask列
+        transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
+        transformed_masked_null_predict_X.fillna(0, inplace=True)  # 填充空值为0
+        logger.info(f"data_transformed_masked_null数据字段为：{transformed_masked_null_predict_X.columns}")
+        logger.info(f"data_transformed_masked_null数据行数为：{len(transformed_masked_null_predict_X)}")
+        
+        transformed_masked_null_predict_X.to_csv(
+            DataPathConfig.PREDICT_DATA_TRANSFORMED_MASK_NULL_PREDICT_PATH,
+            index=False,
+            encoding='utf-8-sig'
+        )
 
-        'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
-        'city': feature_dict[Categorical_feature[1]].category_encode.size,
-        'season': 4,
-    }
-    model = Has_Risk_NFM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现
-    logger.info("模型初始化完成.")
-    logger.info(f"模型结构:\n{model}")
+        # predict_index_df = predict_index_label[['stats_dt', 'pigfarm_dk', ColumnsConfig.HAS_RISK_LABEL]].reset_index(drop=True)
 
-    # --- 开始训练 (当前被注释掉，因为模型未定义) ---
-    predict_df = predict_model(model, predict_loader, config.DEVICE, transformed_feature_df)
-    predict_df = predict_df[ColumnsConfig.MAIN_PREDICT_TEST_WITH_INDEX_DATA_COLUMN]  # 只保留需要的列
-    logger.info(f"预测结果行数为：{len(predict_df)}")
+        # train_X, train_y = create_sequences(train_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
+        # test_X, test_y = create_sequences(val_data, target_column=ColumnsConfig.HAS_RISK_LABEL, seq_length=config.SEQ_LENGTH, feature_columns=ColumnsConfig.feature_columns)
+        # logger.info(f"训练集X形状为：{train_X}")
+        # logger.info(f"训练集y形状为：{train_y}")
+        # logger.info("数据预处理完成.")
 
-    # feature_df = pd.read_csv(algo_interim_dir / "risk_train_connected_feature_data.csv", encoding='utf-8-sig')
-    # feature_df = feature_df[['stats_dt'] + ColumnsConfig.feature_columns]
-    # feature_df['stats_dt'] = pd.to_datetime(feature_df['stats_dt'], errors='coerce')
-    # predict_df = predict_df.merge(feature_df, on=['pigfarm_dk', 'stats_dt'], how='left')
+        # 5. 创建 PyTorch Dataset 和 DataLoader
+        predict_dataset = MultiTaskAndMultiLabelPredictDataset(transformed_masked_null_predict_X)
 
-    # 保存预测结果
-    predict_df = predict_df.rename(columns={
-        'pigfarm_dk': 'pigfarm_dk_transfrom',
-    })
-    predict_df = pd.concat([predict_index_label.reset_index(drop=True), predict_df.reset_index(drop=True)], axis=1)
-    logger.info(f"concat后的预测结果行数为：{len(predict_df)}")
-    save_to_csv(df=predict_df, filepath=config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH)
-    logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")
+        predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
+        logger.info("数据加载器准备完毕.")
+
+        # --- 模型、损失函数、优化器 ---
+        feature_dict = transform.features.features
+        Categorical_feature = ColumnsConfig.DISCRETE_COLUMNS # 离散值字段
+        params = {
+            'model_discrete_columns': ColumnsConfig.MODEL_DISCRETE_COLUMNS,
+            'model_continuous_columns': ColumnsConfig.MODEL_CONTINUOUS_COLUMNS,
+            'dropout': config.DROPOUT,
+
+            'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
+            'city': feature_dict[Categorical_feature[1]].category_encode.size,
+            'season': 4,
+        }
+        model = Has_Risk_NFM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现
+        logger.info("模型初始化完成.")
+        logger.info(f"模型结构:\n{model}")
+
+        # --- 开始训练 (当前被注释掉，因为模型未定义) ---
+        predict_df = predict_model(model, predict_loader, config.DEVICE, transformed_feature_df, pigfarm_dk=pigfarm_dk)
+        if predict_df is None:
+            logger.error(f"预测失败，模型可能未正确加载或数据不匹配。跳过猪场 {pigfarm_dk} 的处理。")
+            continue
+
+        predict_df = predict_df[ColumnsConfig.MAIN_PREDICT_TEST_WITH_INDEX_DATA_COLUMN]  # 只保留需要的列
+        logger.info(f"预测结果行数为：{len(predict_df)}")
+
+        # feature_df = pd.read_csv(algo_interim_dir / "risk_train_connected_feature_data.csv", encoding='utf-8-sig')
+        # feature_df = feature_df[['stats_dt'] + ColumnsConfig.feature_columns]
+        # feature_df['stats_dt'] = pd.to_datetime(feature_df['stats_dt'], errors='coerce')
+        # predict_df = predict_df.merge(feature_df, on=['pigfarm_dk', 'stats_dt'], how='left')
+
+        # 保存预测结果
+        predict_df = predict_df.rename(columns={
+            'pigfarm_dk': 'pigfarm_dk_transfrom',
+        })
+
+        # 添加验证代码
+        if len(predict_df) != len(predict_index_label):
+            logger.error(f"拼接后数据行数 ({len(predict_df)}) 与原始索引行数 ({len(predict_index_label)}) 不匹配!")
+
+        predict_df = pd.concat([predict_index_label.reset_index(drop=True), predict_df.reset_index(drop=True)], axis=1)
+        logger.info(f"concat后的预测结果行数为：{len(predict_df)}")
+
+        single_farm_predict_path = config.main_predict.SINGLE_PREDICT_DATA_DIR / f"abort_abnormal_{pigfarm_dk}.csv"
+        save_to_csv(df=predict_df, filepath=single_farm_predict_path)
+        logger.info(f"预测结果已保存至: {single_farm_predict_path}")
+
+if __name__ == "__main__":
+        # 运行主函数
+    # pigfarm_dk = 'pigfarm_1'  # 替换为实际的猪场ID
+    # pigfarms = [ 'r4ZX/JYPRdaY8FZJNLfF5cznrtQ=','bDoAAHYh1WTM567U', 'bDoAAAv2QUnM567U', 'bDoAADIerQHM567U', 'bDoAAKnsKAjM567U', 'f7QAMgEOEADgAg0vwKgC3sznrtQ=', 'bDoAAK+uUJjM567U', 'bDoAADwkTmXM567U', 'bDoAAISzjqLM567U', 'bDoAABpksjDM567U', 'bDoAADt5M13M567U', 'bDoAAEmD1bLM567U', 'bDoAAJNCEznM567U', 'bDoAALEg7GDM567U', '8lJHtQEeEADgFLbTCgsFAcznrtQ=', 'bDoAAAUUmJ7M567U', 'bDoAALVm0xHM567U', 'bDoAAFL7ETrM567U', 'bDoAAJZ63Q7M567U', 'bDoAAD9Lki3M567U', 'XKCFPgEQEADgAT2OfwAAAcznrtQ=']
+
+    index_pigfarms = read_csv(config.main_predict.PREDICT_INDEX_TABLE)
+    pigfarms = index_pigfarms['pigfarm_dk'].unique().tolist()  # 获取所有唯一的猪场ID
+
+    logger.info(f"开始预测猪场")
+    main(pigfarms=pigfarms)
+    logger.info(f"预测完成猪场")

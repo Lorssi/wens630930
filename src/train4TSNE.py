@@ -35,6 +35,8 @@ from model.multi_task_nfm import Multi_Task_NFM
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 from module.future_generate_main import FeatureGenerateMain
 
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
 # 设置浮点数显示为小数点后2位，抑制科学计数法
 # np.set_printoptions(precision=2, suppress=True)
 
@@ -217,6 +219,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
     logger.info(f"最终评估 - 验证集: 准确率: {val_metrics['accuracy']:.4f}, 精确率: {val_metrics['precision']:.4f}, 召回率: {val_metrics['recall']:.4f}, F1: {val_metrics['f1']:.4f}, AUC: {val_metrics['auc']:.4f}")
     
     logger.info("训练完成.")
+
     return model
 
 def eval(model, val_loader, criterion, device):
@@ -287,6 +290,144 @@ def eval(model, val_loader, criterion, device):
     
     return avg_val_loss, metrics
 
+def visualize_tsne(features, labels=None, perplexity=30, n_components=2, title='t-SNE 特征可视化', label_info=''):
+    """
+    使用t-SNE对特征进行降维并可视化
+    
+    参数:
+    features: 高维特征向量
+    labels: 对应的标签，如果有的话
+    perplexity: t-SNE的困惑度参数
+    n_components: 降维后的维度
+    title: 图表标题
+    label_info: 标签信息，用于文件命名
+    """
+    plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+    plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
+
+    logger.info(f"开始进行t-SNE降维，原始特征维度: {features.shape}")
+    
+    # 执行t-SNE降维
+    tsne = TSNE(n_components=n_components, 
+                perplexity=perplexity, 
+                random_state=config.RANDOM_SEED,
+                max_iter=1000,
+                learning_rate="auto",
+                init="pca")
+    
+    # 降维计算
+    tsne_results = tsne.fit_transform(features)
+    logger.info(f"t-SNE降维完成，降维后形状: {tsne_results.shape}")
+    
+    # 创建可视化
+    plt.figure(figsize=(10, 8))
+    
+    if labels is not None and len(labels) > 0:
+        # 如果有标签数据，使用标签颜色
+        scatter = plt.scatter(tsne_results[:, 0], tsne_results[:, 1], 
+                    c=labels, cmap='viridis', alpha=0.8, s=30)
+        plt.colorbar(scatter, label='类别')
+    # else:
+    #     # 如果没有标签，使用密度图
+    #     sns.kdeplot(x=tsne_results[:, 0], y=tsne_results[:, 1], 
+    #                cmap="viridis", fill=True, thresh=0.05)
+    #     plt.scatter(tsne_results[:, 0], tsne_results[:, 1], 
+    #                alpha=0.3, s=10, color='black')
+    
+    # 使用传入的标题而非硬编码标题
+    plt.title(title, fontsize=16)
+    plt.xlabel('t-SNE 维度 1', fontsize=14)
+    plt.ylabel('t-SNE 维度 2', fontsize=14)
+    plt.grid(alpha=0.3)
+    
+    # 确保输出目录存在
+    os.makedirs(DataPathConfig.TSNE_DATA_DIR, exist_ok=True)
+    
+    # 保存结果
+    plt.tight_layout()
+    
+    # 保存可视化结果，文件名中包含标签信息
+    timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    # 在文件名中添加标签信息
+    file_name = f"tsne_visualization_{label_info}_{timestamp}_{3}.png"
+    output_path = os.path.join(DataPathConfig.TSNE_DATA_DIR, file_name)
+    plt.savefig(output_path, dpi=300)
+    logger.info(f"t-SNE可视化已保存至: {output_path}")
+    
+    # 同时保存降维后的数据
+    tsne_data = pd.DataFrame(
+        tsne_results, 
+        columns=[f'tsne_dim_{i+1}' for i in range(n_components)]
+    )
+    
+    # 如果有标签，也保存标签
+    if labels is not None and len(labels) > 0:
+        tsne_data['label'] = labels
+    
+    # 在CSV文件名中也包含标签信息
+    data_file_name = f"tsne_data_{label_info}_{timestamp}.csv"
+    data_path = os.path.join(DataPathConfig.TSNE_DATA_DIR, data_file_name)
+    tsne_data.to_csv(data_path, index=False)
+    logger.info(f"t-SNE数据已保存至: {data_path}")
+    
+    return tsne_results
+
+def train_predict4TSNE(model, train_loader, device):
+    """
+    训练并预测t-SNE
+    """
+    logger.info("开始多标签预测...")
+    
+    # 加载训练好的模型权重
+    if os.path.exists(config.MODEL_SAVE_PATH):
+        model.load_state_dict(torch.load(config.MODEL_SAVE_PATH, map_location=device))
+        logger.info(f"成功加载模型权重: {config.MODEL_SAVE_PATH}")
+    else:
+        logger.error(f"未找到模型权重文件: {config.MODEL_SAVE_PATH}")
+        return None
+
+    features_list = []
+    labels_list = []
+    
+    # 保存特征的变量
+    hidden_features = []
+
+    # 定义钩子函数
+    def hook_fn(module, input, output):
+        hidden_features.append(output.detach().cpu())
+    
+    # 注册钩子到模型的最后一个隐藏层
+    # 获取MLP中倒数第二层（即输出层之前的那一层）
+    # 假设你的模型为model，要获取mlp中输出层之前的8维向量
+    hook_handle = model.mlp[-3].register_forward_hook(hook_fn)  # -3是获取最后一个激活函数之前的线性层输出
+
+    # 切换到评估模式
+    model.eval()
+    # 不计算梯度，提高效率
+    with torch.no_grad():
+        for inputs, labels in tqdm(train_loader, desc="预测进度"):
+            # 将输入数据移动到指定设备
+            inputs = inputs.to(device)
+            
+            # 前向传播，获取模型输出
+            _ = model(inputs)
+            
+            # 收集这个批次的特征
+            features_list.append(hidden_features[-1])
+            labels_list.append(labels.cpu())
+            
+            # 清空，准备下一批次
+            hidden_features.clear()
+
+    # 移除钩子
+    hook_handle.remove()
+    
+    # 合并所有批次的特征
+    all_features = torch.cat(features_list, dim=0).numpy()
+    all_labels = torch.cat(labels_list, dim=0).numpy()
+    
+    return all_features, all_labels
+
 if __name__ == "__main__":
     logger.info("开始数据加载和预处理...")
     feature_gen_main = FeatureGenerateMain(
@@ -302,8 +443,6 @@ if __name__ == "__main__":
     train_index_data = index_sample_obj.build_train_dataset(config.TRAIN_RUNNING_DT, config.TRAIN_INTERVAL)
     logger.info("----------Generating train dataset----------")
     train_connect_feature_data = connect_feature_obj.build_train_dataset(input_dataset=train_index_data.copy(), param=None)
-
-    train_connect_feature_data = train_connect_feature_data[train_connect_feature_data['pigfarm_dk'] == 'bDoAAKurSXDM567U'] # 仅使用一个猪场数据进行测试
 
     # 1. 加载和基础预处理数据
     # 生成特征
@@ -430,13 +569,24 @@ if __name__ == "__main__":
 
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
     trained_model = train_model(model, train_loader, val_loader, criterion, optimizer, config.NUM_EPOCHS, config.DEVICE, early_stopping=early_stopping)
+    all_features, all_labels = train_predict4TSNE(trained_model, train_loader, config.DEVICE)
 
+    for i, period in enumerate(periods):
+        # 提取当前时期的标签
+        current_labels = all_labels[:, i]
+        
+        # 创建此时期的可视化
+        period_name = f"{period[0]}-{period[1]}天"
+        
+        # 为文件名定义标签信息
+        label_info = f"period_{period[0]}to{period[1]}"
+        
+        tsne_results = visualize_tsne(
+            features=all_features, 
+            labels=current_labels,
+            perplexity=40,
+            title=f"t-SNE 特征可视化 ({period_name})",
+            label_info=label_info  # 添加标签信息用于文件命名
+        )
 
-    # --- 模型评估 (可选，在测试集上) ---
-    # ...
-
-    # --- 保存最终模型 (如果未使用早停保存最佳模型) ---
-    # final_model_path = os.path.join(config.MODEL_SAVE_PATH, "final_lstm_model.pt")
-    # torch.save(trained_model.state_dict(), final_model_path)
-    # logger.info(f"最终模型已保存至: {final_model_path}")
 

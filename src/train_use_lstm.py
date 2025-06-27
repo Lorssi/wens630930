@@ -32,6 +32,7 @@ from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
 from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel, Has_Risk_NFM_MultiLabel_7d1Linear
 from model.multi_task_nfm import Multi_Task_NFM
+from model.lstm import Has_Risk_NFM_LSTM_MultiLabel_7d1Linear
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 from module.future_generate_main import FeatureGenerateMain
 
@@ -303,8 +304,6 @@ if __name__ == "__main__":
     logger.info("----------Generating train dataset----------")
     train_connect_feature_data = connect_feature_obj.build_train_dataset(input_dataset=train_index_data.copy(), param=None)
 
-    train_connect_feature_data = train_connect_feature_data[train_connect_feature_data['pigfarm_dk'] == 'bDoAAKurSXDM567U'] # 仅使用一个猪场数据进行测试
-
     # 1. 加载和基础预处理数据
     # 生成特征
     # feature_generator = FeatureGenerator(running_dt=config.TRAIN_RUNNING_DT, interval_days=config.TRAIN_INTERVAL)
@@ -412,7 +411,7 @@ if __name__ == "__main__":
         'city': feature_dict[Categorical_feature[1]].category_encode.size,
         'season': 4,
     }
-    model = Has_Risk_NFM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现
+    model = Has_Risk_NFM_LSTM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 

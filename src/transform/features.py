@@ -50,6 +50,9 @@ class Normalization(BaseEncoder):
         return self
 
     def transform(self, X: pd.Series, y=None, default_value=np.nan):
+        if self.std == 0 or np.isclose(self.std, 0):
+            # 如果标准差为0，所有非NaN值返回0
+            return X.map(lambda x: np.nan if not np.isnan(x) else default_value)
         return X.map(lambda x: (x - self.mean) / self.std if not np.isnan(x) else default_value)
 
     def transform_list(self, X: pd.Series, y=None, default_value=np.nan, padding:Optional[int]=None):
