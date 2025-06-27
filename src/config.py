@@ -5,10 +5,11 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent.parent
 DATA_DIR = ROOT_DIR / "data"
 MODELS_DIR = ROOT_DIR / "models"
+SINGLE_MODELS_DIR = MODELS_DIR / "single_farm_models"
 
 # --- 日期 ---
-TRAIN_RUNNING_DT = "2024-12-1" # 运行日期 (用于数据切分)
-TRAIN_INTERVAL = 100 # 训练数据的时间间隔 (单位：天)
+TRAIN_RUNNING_DT = "2024-3-1" # 运行日期 (用于数据切分)
+TRAIN_INTERVAL = 400 # 训练数据的时间间隔 (单位：天)
 
 # --- 数据相关配置 ---
 VALIDATION_SPLIT_RATIO = 0.075 # 验证集占总猪场数据的比例 (按猪场ID划分时)
@@ -34,6 +35,7 @@ NUM_WORKERS = 0
 # --- 其他配置 ---
 MODEL_SAVE_PATH = MODELS_DIR / "model.pth" # 模型保存路径
 TRANSFORMER_SAVE_PATH = MODELS_DIR / "transformer.json" # 特征转换器保存路径
+
 RANDOM_SEED = 42 # 随机种子，保证结果可复现
 
 class main_predict:
@@ -43,10 +45,11 @@ class main_predict:
 
 
     PREDICT_DATA_DIR = DATA_DIR / "predict"
+    SINGLE_PREDICT_DATA_DIR = PREDICT_DATA_DIR / "single_farm_predict"
 
     HAS_RISK_PREDICT_RESULT_SAVE_PATH = PREDICT_DATA_DIR / "abort_abnormal.csv"
     DAYS_PREDICT_RESULT_SAVE_PATH = PREDICT_DATA_DIR / "abort_abnormal_day.csv"
 
-    PREDICT_INDEX_TABLE = PREDICT_DATA_DIR / "index_sample_20241201.csv"
+    PREDICT_INDEX_TABLE = PREDICT_DATA_DIR / "index_sample_20240301.csv"
     DAYS_PREDICT_INDEX_TABLE = PREDICT_DATA_DIR / "index_sample_days_20241201.csv"
 

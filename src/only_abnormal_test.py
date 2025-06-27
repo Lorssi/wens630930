@@ -119,8 +119,6 @@ def split_data(data_transformed_masked_null, y):
 
     return train_X, test_X, train_y, test_y
 
-
-# 基于概率的随机采样计算
 def pick_normal2abnormal(X, y):
     """
     筛选从正常变为异常的样本
@@ -190,6 +188,91 @@ def pick_normal2abnormal(X, y):
     logger.info(f"占总样本数的 {(len(normal2abnormal_samples)/len(df))*100:.2f}%")
     
     return X, y, normal2abnormal_samples
+
+def pick_normal2abnormal_expand(X, y):
+    """
+    筛选从正常变为异常的样本，使用扩展窗口：
+    - 向前扩展到t-3
+    - 向后扩展到连续异常结束为止
+    
+    参数:
+    X: 特征数据DataFrame
+    y: 标签数据DataFrame
+    
+    返回:
+    从正常到异常的样本DataFrame及其特征和标签子集
+    """
+    # 合并特征和标签数据
+    df = pd.concat([X, y], axis=1)
+    
+    # 定义时段和对应的标签列
+    periods = [(1, 7), (8, 14), (15, 21)]
+    abort_columns = ['abort_{0}_{1}'.format(left, right) for left, right in periods]
+    
+    # 确保日期列存在
+    if 'stats_dt' not in X.columns:
+        logger.error("数据中缺少stats_dt列，无法按日期排序")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
+    # 确保猪场列存在
+    if 'pigfarm_dk' not in X.columns:
+        logger.error("数据中缺少pigfarm_dk列，无法按猪场分组")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
+    # 存储所有需要返回的样本索引
+    all_indices_to_mark = set()
+    
+    # 按猪场分组
+    farm_groups = df.groupby('pigfarm_dk')
+    
+    # 遍历每个猪场
+    for farm_id, farm_df in farm_groups:
+        # 按日期排序
+        farm_df = farm_df.sort_values('stats_dt')
+        
+        # 遍历每个时段标签
+        for abort_col in abort_columns:
+            # 查找从正常变为异常的样本
+            for i in range(len(farm_df) - 1):
+                if farm_df.iloc[i][abort_col] == 0 and farm_df.iloc[i+1][abort_col] == 1:
+                    # 找到了从正常到异常的转变点
+                    # 1. 向前扩展到t-3
+                    start_idx = max(0, i - 3)  # 从t-3开始（如果可能）
+                    
+                    # 2. 向后扩展到连续异常结束为止
+                    end_idx = i + 2  # 初始为t+1
+                    # 从t+2开始检查，找到第一个不为1的位置
+                    for j in range(i + 2, len(farm_df)):
+                        if farm_df.iloc[j][abort_col] == 1:
+                            end_idx = j + 1  # 包含当前位置
+                        else:
+                            break
+                    
+                    # 获取相关位置对应的原始数据索引
+                    indices_to_mark = farm_df.index[start_idx:end_idx]
+                    all_indices_to_mark.update(indices_to_mark)
+    
+    # 直接返回所有符合条件的样本
+    if not all_indices_to_mark:
+        logger.warning("未找到从正常变为异常的样本")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
+    normal2abnormal_samples = df.loc[list(all_indices_to_mark)]
+    normal2abnormal_samples = normal2abnormal_samples.reset_index(drop=True)
+    normal2abnormal_samples.to_csv(
+        "normal2abnormal_samples_expanded.csv",
+        index=False,
+        encoding='utf-8-sig'
+    )
+
+    X_filtered = normal2abnormal_samples[ColumnsConfig.feature_columns]
+    y_filtered = normal2abnormal_samples[abort_columns]
+    
+    logger.info(f"共找到 {len(normal2abnormal_samples)} 个从正常到异常的样本记录")
+    logger.info(f"占总样本数的 {(len(normal2abnormal_samples)/len(df))*100:.2f}%")
+    logger.info(f"扩展窗口：向前取t-3，向后取到连续异常结束")
+    
+    return X_filtered, y_filtered, normal2abnormal_samples
 
 def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, device, early_stopping=None):
     logger.info("开始训练...")
@@ -351,7 +434,7 @@ if __name__ == "__main__":
     logger.info(f"标签计算完成，特征字段为：{X.columns}， 标签数据字段为：{y.columns}")
     logger.info(f"X,y特征数据形状为：{X.shape}， 标签数据形状为：{y.shape}")
     
-    X, y, _ = pick_normal2abnormal(X, y)  # 筛选从正常变为异常的样本
+    X, y, _ = pick_normal2abnormal_expand(X, y)  # 筛选从正常变为异常的样本
 
     # transformer
     if X is None:

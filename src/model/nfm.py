@@ -50,7 +50,7 @@ class FeatureInteraction(nn.Module):
                 torch.pow(torch.sum(emb_stk, dim=1), 2) - torch.sum(torch.pow(emb_stk, 2), dim=1)
         ) # dim = 1, 沿field_num也就是特征维度求和
         # emb_cross = [batch_size, emb_size]
-        return self.bn(emb_cross)
+        return self.bn(emb_cross) 
 
 class Has_Risk_NFM(nn.Module):
     """

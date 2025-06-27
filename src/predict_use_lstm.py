@@ -31,6 +31,7 @@ from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
 from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel, Has_Risk_NFM_MultiLabel_7d1Linear
 from model.risk_wider_nfm import Has_Risk_NFM_MultiLabel_Wider
+from model.lstm import Has_Risk_NFM_LSTM_MultiLabel_7d1Linear
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 
 from dataset.risk_prediction_index_sample_dataset import RiskPredictionIndexSampleDataset
@@ -171,7 +172,7 @@ def predict_model(model, predict_loader, device, predict_index):
 if __name__ == "__main__":
     logger.info("开始数据加载和预处理...")
     index_df = pd.read_csv(config.main_predict.PREDICT_INDEX_TABLE, encoding='utf-8-sig')
-    index_df = index_df[index_df['pigfarm_dk'] == 'bDoAAKurSXDM567U']
+
     if index_df is None:
         logger.error("索引数据加载失败，程序退出。")
         exit()
@@ -262,7 +263,7 @@ if __name__ == "__main__":
         'city': feature_dict[Categorical_feature[1]].category_encode.size,
         'season': 4,
     }
-    model = Has_Risk_NFM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现
+    model = Has_Risk_NFM_LSTM_MultiLabel_7d1Linear(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 
