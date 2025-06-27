@@ -1,5 +1,5 @@
 import pandas as pd
-from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score, classification_report, cohen_kappa_score, confusion_matrix
+from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score, classification_report, cohen_kappa_score, confusion_matrix, mean_absolute_error, mean_squared_error
 from sklearn.exceptions import UndefinedMetricWarning
 from tqdm import tqdm
 import numpy as np
@@ -358,17 +358,29 @@ class AbortionDaysPredictEvalData():
         # 计算指标
         report = classification_report(y_true, y_pred, labels=list(range(8)), output_dict=True, zero_division=0)
         trend_accuracy = self.calculate_trend_accuracy(period, prev_status, next_status)
-        kappa = cohen_kappa_score(y_true, y_pred)
+        kappa = cohen_kappa_score(y_true, y_pred, labels=list(range(8)))
         conf_matrix = confusion_matrix(y_true, y_pred, labels=list(range(8)))
+        overall_mae = mean_absolute_error(y_true, y_pred)
+        overall_rmse = np.sqrt(mean_squared_error(y_true, y_pred))
 
         # 初始化结果列表
         results = []
-
         valid_auc_scores = []
 
         # 为每个类别创建一条记录
         for label in range(8):
             if str(label) in report:
+                # 计算当前类别的MAE和RMSE
+                # 筛选出真实标签为当前label的样本
+                label_mask = (y_true == label)
+                if np.sum(label_mask) > 0:  # 确保有该标签的样本
+                    y_true_label = y_true[label_mask]
+                    y_pred_label = y_pred[label_mask]
+                    label_mae = mean_absolute_error(y_true_label, y_pred_label)
+                    label_rmse = np.sqrt(mean_squared_error(y_true_label, y_pred_label))
+                else:
+                    label_mae = None
+                    label_rmse = None
                 # 计算当前类别的ovr auc
                 auc_score = None
                 try:
@@ -395,14 +407,11 @@ class AbortionDaysPredictEvalData():
                     'f1_score': report[str(label)]['f1-score'],
                     'auc': auc_score,
                     'kappa': kappa,
+                    'MAE': label_mae,
+                    'RMSE': label_rmse,
                     'trend_accuracy': trend_accuracy,
                     'recognition': self.recognition
                 }
-
-                # 为每个标签添加混淆矩阵行和列
-                for i in range(8):
-                    result_row[f'matrix_{i}'] = conf_matrix[label, i] if label < 8 else 0
-
                 results.append(result_row)
 
         # 计算加权指标
@@ -418,14 +427,23 @@ class AbortionDaysPredictEvalData():
             'f1_score': report['weighted avg']['f1-score'],
             'auc': np.mean(valid_auc_scores) if valid_auc_scores else None,
             'kappa': kappa,
+            'MAE': overall_mae,
+            'RMSE': overall_rmse,
             'trend_accuracy': trend_accuracy,
             'recognition': self.recognition
         }
-        for i in range(8):
-            result_row[f'matrix_{i}'] = None
         results.append(result_row)
 
+        # 创建DataFrame并指定列顺序
+        result_df = pd.DataFrame(results)
+        column_order = ['stats_dt', 'sample_type', 'total_sample_num', 'remain_sample_num',
+                    'eval_period', 'label', 'precision', 'recall', 'f1_score', 'auc',
+                    'kappa', 'MAE', 'RMSE', 'trend_accuracy', 'recognition']
+        result_df = result_df[column_order]
+
         self.result = pd.concat([self.result, pd.DataFrame(results)], ignore_index=True)
+
+        return conf_matrix
 
 
     def special_sample_2_eval_one_periods_metric(self, period):
@@ -451,12 +469,26 @@ class AbortionDaysPredictEvalData():
         report = classification_report(y_true, y_pred, labels=list(range(8)), output_dict=True, zero_division=0)
         kappa = cohen_kappa_score(y_true, y_pred)
         conf_matrix = confusion_matrix(y_true, y_pred, labels=list(range(8)))
+        overall_mae = mean_absolute_error(y_true, y_pred)
+        overall_rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+
         # 初始化结果列表
         results = []
         valid_auc_scores = []
         # 为每个类别创建一条记录
         for label in range(0, 8):
             if str(label) in report:
+                # 计算当前类别的MAE和RMSE
+                # 筛选出真实标签为当前label的样本
+                label_mask = (y_true == label)
+                if np.sum(label_mask) > 0:  # 确保有该标签的样本
+                    y_true_label = y_true[label_mask]
+                    y_pred_label = y_pred[label_mask]
+                    label_mae = mean_absolute_error(y_true_label, y_pred_label)
+                    label_rmse = np.sqrt(mean_squared_error(y_true_label, y_pred_label))
+                else:
+                    label_mae = None
+                    label_rmse = None
                 # 计算当前类别的ovr auc
                 auc_score = None
                 try:
@@ -483,13 +515,11 @@ class AbortionDaysPredictEvalData():
                     'f1_score': report[str(label)]['f1-score'],
                     'auc': auc_score,
                     'kappa': kappa,
+                    'MAE': label_mae,
+                    'RMSE': label_rmse,
                     'trend_accuracy': '-',
                     'recognition': self.recognition
                 }
-
-                # 为每个标签添加混淆矩阵行和列
-                for i in range(8):
-                    result_row[f'matrix_{i}'] = conf_matrix[label, i] if label < 8 else 0
 
                 results.append(result_row)
 
@@ -506,16 +536,16 @@ class AbortionDaysPredictEvalData():
             'f1_score': report['weighted avg']['f1-score'],
             'auc': np.mean(valid_auc_scores) if valid_auc_scores else None,
             'kappa': kappa,
+            'MAE': overall_mae,
+            'RMSE': overall_rmse,
             'trend_accuracy': '-',
             'recognition': self.recognition
         }
 
-        for i in range(8):
-            result_row[f'matrix_{i}'] = None
-
         results.append(result_row)
-
         self.result = pd.concat([self.result, pd.DataFrame(results)], ignore_index=True)
+
+        return conf_matrix
 
 
     def overall_eval_one_periods_metric(self, period, exclude_feiwen=True, hierarchical_data=None, level=None, name=None):
@@ -547,10 +577,26 @@ class AbortionDaysPredictEvalData():
 
         # 计算指标
         report = classification_report(y_true, y_pred, labels=list(range(8)), output_dict=True, zero_division=0)
-        # 计算kappa系数
-        kappa = cohen_kappa_score(y_true, y_pred)
-        # 计算混淆矩阵
+        # 计算kappa系数和混合矩阵
+        # 获取实际存在的标签
+        unique_labels = np.unique(np.concatenate([y_true, y_pred]))
+        valid_labels = [label for label in range(8) if label in unique_labels]
+        # 如果有效标签少于2个，使用所有可能的标签
+        labels_for_metrics = valid_labels if len(valid_labels) >= 2 else list(range(8))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            try:
+                kappa = cohen_kappa_score(y_true, y_pred, labels=labels_for_metrics)
+                # 检查kappa是否为NaN或无穷大
+                if np.isnan(kappa) or np.isinf(kappa):
+                    kappa = 0.0
+            except Exception as e:
+                self.logger.warning(f"计算kappa系数时出错: {e}")
+                kappa = 0.0
         conf_matrix = confusion_matrix(y_true, y_pred, labels=list(range(8)))
+        # 计算整体MAE和RMSE
+        overall_mae = mean_absolute_error(y_true, y_pred)
+        overall_rmse = np.sqrt(mean_squared_error(y_true, y_pred))
 
         # 初始化结果列表
         results = []
@@ -561,6 +607,17 @@ class AbortionDaysPredictEvalData():
         # 为每个类别创建一条记录
         for label in range(8):
             if str(label) in report:
+                # 计算当前类别的MAE和RMSE
+                # 筛选出真实标签为当前label的样本
+                label_mask = (y_true == label)
+                if np.sum(label_mask) > 0:  # 确保有该标签的样本
+                    y_true_label = y_true[label_mask]
+                    y_pred_label = y_pred[label_mask]
+                    label_mae = mean_absolute_error(y_true_label, y_pred_label)
+                    label_rmse = np.sqrt(mean_squared_error(y_true_label, y_pred_label))
+                else:
+                    label_mae = None
+                    label_rmse = None
                 # 计算当前类别的ovr auc
                 auc_score = None
                 try:
@@ -588,12 +645,10 @@ class AbortionDaysPredictEvalData():
                     'f1_score': report[str(label)]['f1-score'],
                     'auc': auc_score,
                     'kappa': kappa,
+                    'MAE': label_mae,
+                    'RMSE': label_rmse,
                     'recognition': self.recognition
                 }
-
-                # 为每个标签添加混淆矩阵行和列
-                for i in range(8):
-                    result_row[f'matrix_{i}'] = conf_matrix[label, i] if label < 8 else 0
                 results.append(result_row)
 
         # 计算加权指标
@@ -609,10 +664,10 @@ class AbortionDaysPredictEvalData():
             'f1_score': report['weighted avg']['f1-score'],
             'auc': np.mean(valid_auc_scores) if valid_auc_scores else None,
             'kappa': kappa,
+            'MAE': overall_mae,
+            'RMSE': overall_rmse,
             'recognition': self.recognition
         }
-        for i in range(8):
-            result_row[f'matrix_{i}'] = None
         results.append(result_row)
 
         result_df = pd.DataFrame(results)
@@ -622,6 +677,8 @@ class AbortionDaysPredictEvalData():
             result_df.drop(columns=[f'l{level}_name'], inplace=True)
 
         self.result = pd.concat([self.result, result_df], ignore_index=True)
+
+        return conf_matrix
 
 
     def eval_with_organizational_hierarchy(self):
@@ -676,10 +733,12 @@ class AbortionDaysPredictEvalData():
     # 计算剔除非瘟整体指标
     def eval_all_samples_exclude_feiwen(self):
         self.result = pd.DataFrame() # 清空上一次的结果
+        conf_matrix_list = {}  # 用于存储每个周期的混淆矩阵
         for abortion_period in tqdm(['1_7', '8_14', '15_21'], desc='计算剔除非瘟整体指标'):
-            self.overall_eval_one_periods_metric(abortion_period)
+            conf_matrix = self.overall_eval_one_periods_metric(abortion_period)
+            conf_matrix_list[abortion_period] = (conf_matrix)
 
-        return self.result
+        return self.result, conf_matrix_list
 
     # 计算特殊样本指标
     def eval_special_samples(self):

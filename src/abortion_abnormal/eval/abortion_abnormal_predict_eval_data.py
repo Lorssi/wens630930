@@ -401,6 +401,8 @@ class AbortionAbnormalPredictEvalData():
         data = self.predict_data.copy()
 
         special_samples = self.get_special_sample(data, period, prev_status, next_status)
+        # if prev_status == 0 and next_status == 1:
+        #     special_samples.to_csv(f'special_samples_{period}.csv', index=False)
 
         # 合并所有特殊样本
         if len(special_samples) > 0:
@@ -661,12 +663,15 @@ class AbortionAbnormalPredictEvalData():
             for abortion_period in tqdm(['1_7', '8_14', '15_21'], desc=f'计算{prev_status}到{next_status}特殊样本1指标'):
                 # 评估从低到高的指标
                 self.special_sample_1_eval_one_periods_metric(abortion_period, prev_status, next_status)
-        # ## 计算abnormal_to_abnormal指标
+
+        ## 计算abnormal_to_abnormal指标
         for abortion_period in tqdm(['1_7', '8_14', '15_21'], desc='计算特殊样本2指标'):
             self.special_sample_2_eval_one_periods_metric(abortion_period)
+
         ## 计算排除异常流产率的数据的normal_to_abnormal指标
         for abortion_period in tqdm(['1_7', '8_14', '15_21'], desc='计算normal_to_abnormal排除异常流产率指标'):
             self.special_sample_1_eval_one_periods_metric(abortion_period, 1, 2)
+
         self.predict_data = tmp_data # 恢复原始数据
         return self.result
 
