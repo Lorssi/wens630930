@@ -8,7 +8,7 @@ INTERIM_DIR = "data/interim_data"
 class EvalFilename():
     version = None # 版本号
     feature = None # 特征文件名
-    eval_date = None # 评估开始日期
+    eval_date_month = None # 评估开始日期
 
 # 评估目录
 eval_dir = os.path.join(INTERIM_DIR, 'eval')
