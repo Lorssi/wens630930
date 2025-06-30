@@ -9,7 +9,7 @@ project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(project_root))
 
 from abortion_abnormal.eval.eval_base import EvalBaseMixin
-from abortion_abnormal.eval.build_eval_dateset import abortion_abnormal_index_sample, abortion_days_index_sample
+from abortion_abnormal.eval.build_eval_dateset import abortion_abnormal_index_sample, abortion_days_index_sample, abortion_abnormal_index_sample_v2
 from abortion_abnormal.eval.abortion_abnormal_predict_eval_data import AbortionAbnormalPredictEvalData
 from abortion_abnormal.eval.abortion_days_predict_eval_data import AbortionDaysPredictEvalData
 import abortion_abnormal.eval.eval_config as config
@@ -28,11 +28,13 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
     def __init__(self, logger=None):
         self.logger = logger
         self.pigfarm_dk = None
+        self.pigfarm_dks = None
         self.eval_running_dt_start = None
         self.eval_running_dt_end = None
         self.index_sample = None
         self.sample_ground_truth = None
         self.predict_data = None
+
 
     # 构建评测数据集
     # def build_eval_set(self, eval_running_dt, eval_interval, param=None, predict_data=None, pigfarm_dk=None, use_cache = False):
@@ -44,14 +46,18 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
         self.eval_running_dt_end = (eval_running_dt + pd.Timedelta(days=eval_interval)).strftime('%Y-%m-%d')
 
         # 获取真实值
-        self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample(self.eval_running_dt_start, self.eval_running_dt_end, use_cache=use_cache)
+        # self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample(self.eval_running_dt_start, self.eval_running_dt_end, use_cache=use_cache)
+        self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample_v2(self.eval_running_dt_start, self.eval_running_dt_end, use_cache=use_cache)
         self.index_sample.to_csv(config.abortion_abnormal_eval_index_sample_save_path, index=False, encoding='utf-8')
         self.sample_ground_truth.to_csv(config.abortion_abnormal_eval_ground_truth_save_path, index=False, encoding='utf-8')
 
+
         if pigfarm_dks is not None:
+            self.pigfarm_dks = pigfarm_dks
+            pdks = [dk.replace('@', '/') for dk in pigfarm_dks] # 替换回原来的斜杠格式
             # 如果传入了猪场列表，则只保留这些猪场的数据
-            self.index_sample = self.index_sample[self.index_sample['pigfarm_dk'].isin(pigfarm_dks)].copy()
-            self.sample_ground_truth = self.sample_ground_truth[self.sample_ground_truth['pigfarm_dk'].isin(pigfarm_dks)].copy()
+            self.index_sample = self.index_sample[self.index_sample['pigfarm_dk'].isin(pdks)].copy()
+            self.sample_ground_truth = self.sample_ground_truth[self.sample_ground_truth['pigfarm_dk'].isin(pdks)].copy()
 
         # delete 获取预测结果
         feature = config.EvalFilename.feature
@@ -92,6 +98,19 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
             self.predict_data = self.predict_data[self.predict_data['pigfarm_dk'] == pdk].copy()
             self.sample_ground_truth = self.sample_ground_truth[self.sample_ground_truth['pigfarm_dk'] == pdk].copy()
 
+        # delete 将sample_ground_truth和predict_data合并，便于后续分析
+        # 创建predict_data的键组合
+        predict_keys = self.predict_data[['pigfarm_dk', 'stats_dt']].apply(
+            lambda x: f"{x['pigfarm_dk']}_{x['stats_dt']}", axis=1
+        )
+        # 创建sample_ground_truth的键组合
+        sample_keys = self.sample_ground_truth[['pigfarm_dk', 'stats_dt']].apply(
+            lambda x: f"{x['pigfarm_dk']}_{x['stats_dt']}", axis=1
+        )
+        # 保留在predict_data中存在的数据
+        self.sample_ground_truth = self.sample_ground_truth[sample_keys.isin(predict_keys)].copy()
+
+
         # tmp = self.sample_ground_truth.merge(
         #     self.predict_data,
         #     on=['pigfarm_dk', 'stats_dt'],
@@ -113,7 +132,7 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
         all_sample_result_exclude_feiwen = eval_dt.eval_all_samples_exclude_feiwen()
         # 特殊样本分析
         special_samples_result = eval_dt.eval_special_samples()
-        if self.pigfarm_dk is None:
+        if self.pigfarm_dk is None and self.pigfarm_dks is None:
             # 特殊样本分析-猪业一部
             special_samples_result2 = eval_dt.eval_special_samples(l2_name=['猪业一部'])
             # 分级组织评估
@@ -125,31 +144,62 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
 
         # delete 临时组合，复制方便
         data = all_sample_result_exclude_feiwen.copy()
+        # 定义期望的eval_period顺序
+        expected_periods = ['1_7', '8_14', '15_21']
+
         # 将specail_samples_result[sample_type]=='normal-2_to_abnormal-2'的precision,recall,f1_score,auc,special_recall列加在data后面
         if 'sample_type' in special_samples_result.columns:
-            normal_to_abnormal = special_samples_result[special_samples_result['sample_type'] == 'normal-2_to_abnormal-2'].reset_index().copy()
-            if not normal_to_abnormal.empty:
-                for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
-                    if col in normal_to_abnormal.columns:
-                        data[f'normal_to_abnormal_{col}'] = normal_to_abnormal[col]
+            normal_to_abnormal = special_samples_result[special_samples_result['sample_type'] == 'normal-2_to_abnormal-2'].reset_index(drop=True).copy()
+            # 处理normal_to_abnormal数据，确保按期望顺序
+            for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
+                values = []
+                for period in expected_periods:
+                    if not normal_to_abnormal.empty and 'eval_period' in normal_to_abnormal.columns:
+                        period_data = normal_to_abnormal[normal_to_abnormal['eval_period'] == period]
+                        if not period_data.empty and col in period_data.columns:
+                            values.append(period_data[col].iloc[0])
+                        else:
+                            values.append(None)
+                    else:
+                        values.append(None)
+                data[f'normal_to_abnormal_{col}'] = values
+
             # 将specail_samples_result[sample_type]=='abnormal-2_to_normal-2'的precision,recall,f1_score,auc,special_recall列加在data后面
             abnormal_to_normal = special_samples_result[special_samples_result['sample_type'] == 'abnormal-2_to_normal-2'].reset_index().copy()
-            if not abnormal_to_normal.empty:
-                for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
-                    if col in abnormal_to_normal.columns:
-                        data[f'abnormal_to_normal_{col}'] = abnormal_to_normal[col]
+            # 处理abnormal_to_normal数据，确保按期望顺序
+            for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
+                values = []
+                for period in expected_periods:
+                    if not abnormal_to_normal.empty and 'eval_period' in abnormal_to_normal.columns:
+                        period_data = abnormal_to_normal[abnormal_to_normal['eval_period'] == period]
+                        if not period_data.empty and col in period_data.columns:
+                            values.append(period_data[col].iloc[0])
+                        else:
+                            values.append(None)
+                    else:
+                        values.append(None)
+                data[f'abnormal_to_normal_{col}'] = values
             # 将specail_samples_result[sample_type]=='abnormal_to_abnormal'的precision,recall,f1_score,auc,special_recall列加在data后面
             abnormal_to_abnormal = special_samples_result[special_samples_result['sample_type'] == 'abnormal_to_abnormal'].reset_index().copy()
-            if not abnormal_to_abnormal.empty:
-                for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
-                    if col in abnormal_to_abnormal.columns:
-                        data[f'abnormal_to_abnormal_{col}'] = abnormal_to_abnormal[col]
+            # 处理abnormal_to_abnormal数据，确保按期望顺序
+            for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
+                values = []
+                for period in expected_periods:
+                    if not abnormal_to_abnormal.empty and 'eval_period' in abnormal_to_abnormal.columns:
+                        period_data = abnormal_to_abnormal[abnormal_to_abnormal['eval_period'] == period]
+                        if not period_data.empty and col in period_data.columns:
+                            values.append(period_data[col].iloc[0])
+                        else:
+                            values.append(None)
+                    else:
+                        values.append(None)
+                data[f'abnormal_to_abnormal_{col}'] = values
         else:
             for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
                 data[f'normal_to_abnormal_{col}'] = None
                 data[f'abnormal_to_normal_{col}'] = None
                 data[f'abnormal_to_abnormal_{col}'] = None
-        if self.pigfarm_dk is None:
+        if self.pigfarm_dk is None and self.pigfarm_dks is None:
             # 将l2_results[l2_name]=='猪业一部'的stats_dt,l2_name,total_sample_num,remain_sample_num,eval_period,precision,recall,f1_score,auc,recognition列加在data后面
             pig_dept = l2_results[l2_results['l2_name'] == '猪业一部'].reset_index().copy()
             if not pig_dept.empty:
@@ -177,7 +227,7 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
                 all_sample_result.to_excel(writer, sheet_name='整体', index=False)
                 all_sample_result_exclude_feiwen.to_excel(writer, sheet_name='整体-剔除非瘟数据', index=False, float_format="%.4f")
                 special_samples_result.to_excel(writer, sheet_name='特殊样本分析', index=False, float_format="%.4f")
-                if self.pigfarm_dk is None:
+                if self.pigfarm_dk is None and self.pigfarm_dks is None:
                     special_samples_result2.to_excel(writer, sheet_name='特殊样本分析-猪业一部', index=False, float_format="%.4f")
                     l2_results.to_excel(writer, sheet_name='二级组织分类', index=False, float_format="%.4f")
                     l3_results.to_excel(writer, sheet_name='三级组织分类', index=False, float_format="%.4f")
@@ -319,15 +369,15 @@ def all_pigfarm_evaluate(version=None, features=None, predict_data=None, pigfarm
         config.EvalFilename.feature = f'{feature}'
         config.EvalFilename.version = version
         for (start_date, month) in [
-            # ('2024-02-29', '3'),
-            # ('2024-05-31', '6'),
-            # ('2024-08-31', '9'),
+            ('2024-02-29', '3'),
+            ('2024-05-31', '6'),
+            ('2024-08-31', '9'),
             ('2024-11-30', '12'),
         ]:
             config.EvalFilename.eval_date_month = month
             abortion_abnormal_eval = AbortionAbnormalPredictEval(logger)
-            # abortion_abnormal_eval.build_eval_set(start_date, 30, predict_data=predict_data)
-            abortion_abnormal_eval.build_eval_set(start_date, 30, predict_data=predict_data, use_cache=True, pigfarm_dks=pigfarm_dks)
+            abortion_abnormal_eval.build_eval_set(start_date, 30, predict_data=predict_data)
+            # abortion_abnormal_eval.build_eval_set(start_date, 30, predict_data=predict_data, use_cache=True, pigfarm_dks=pigfarm_dks)
             data = abortion_abnormal_eval.eval_with_index_sample()
             eval_result = pd.concat([eval_result, data], ignore_index=True)
 
@@ -345,6 +395,7 @@ def per_pigfarm_evaluate():
 
     index = pd.read_csv('pigfarm_dks.csv')
     pigfarm_dks = index['pigfarm_dk'].unique().tolist()
+    # pigfarm_dks = ['L8X1mwESEADgADTRfwAAAcznrtQ=', 'bDoAAAg6uQPM567U', 'bDoAADt50rLM567U', 'bDoAAF5Fd63M567U']
     print(len(pigfarm_dks))
     # pigfarm_dks = ['bDoAAHYh1WTM567U', 'bDoAAAv2QUnM567U']
     pigfarm_dks = [dk.replace('/', '@') for dk in pigfarm_dks]
@@ -356,8 +407,8 @@ def per_pigfarm_evaluate():
     best_baseline_predict_data = pd.read_csv('data/predict/abort_abnormal/v1.0.0 best_baseline/v1.0.0 best_baseline 12/abort_abnormal.csv')
     all_pigfarm_evaluate(version=['v1.0.b'], features=['best_baseline'], predict_data=best_baseline_predict_data, pigfarm_dks=pigfarm_dks)
     # # 测评训练后数据
-    # train_predict_data = pd.read_csv('data/predict/abort_abnormal/v1.0.t train/v1.0.t train 12/abort_abnormal.csv')
-    # all_pigfarm_evaluate(version=['v1.0.t'], features=['train'], predict_data=train_predict_data, pigfarm_dks=pigfarm_dks)
+    train_predict_data = pd.read_csv('data/predict/abort_abnormal/v1.0.t train/v1.0.t train 12/abort_abnormal.csv')
+    all_pigfarm_evaluate(version=['v1.0.t'], features=['train'], predict_data=train_predict_data, pigfarm_dks=pigfarm_dks)
 
     overall_col = ['stats_dt', 'total_sample_num', 'remain_sample_num', 'eval_period', 'precision', 'recall', 'f1_score', 'auc', 'recognition']
     prefixes = ['normal_to_abnormal', 'abnormal_to_normal', 'abnormal_to_abnormal']
@@ -510,6 +561,15 @@ def per_pigfarm_evaluate():
 
 
 if __name__ == "__main__":
-    per_pigfarm_evaluate()
+    # per_pigfarm_evaluate()
+
+    # index = pd.read_csv('pigfarm_dks.csv')
+    # pigfarm_dks = index['pigfarm_dk'].unique().tolist()
+    # pigfarm_dks = [dk.replace('/', '@') for dk in pigfarm_dks]
+
+    # train_predict_data = pd.read_csv('data/predict/abort_abnormal/v1.0.t train/v1.0.t train 12/abort_abnormal.csv')
+    # all_pigfarm_evaluate(version=['v1.0.t'], features=['train'], predict_data=train_predict_data, pigfarm_dks=pigfarm_dks)
+
+    all_pigfarm_evaluate(version=['v1.0.49'], features=['abortion_abnormal_window_expand14'])
 
 

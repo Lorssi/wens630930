@@ -396,7 +396,6 @@ class AbortionAbnormalPredictEvalData():
         elif prev_status == 1 and next_status == 2: # delete 这一行只是写着方便，与实际意义无关
             sample_type = 'normal-2_to_abnormal-2_single_influence'
         # 1. 筛选特殊样本
-        special_samples = []
         # 获取预测数据
         data = self.predict_data.copy()
 
@@ -417,6 +416,9 @@ class AbortionAbnormalPredictEvalData():
         else:
             self.logger.warning(f"没有找到满足条件的特殊样本，abortion_period: {period}")
             return
+
+        if prev_status == 0 and next_status == 1:
+            special_samples.to_csv(f'special_samples_exclude_feiwen_{period}.csv', index=False, encoding='utf-8')
 
         # 3. 计算评估指标
         y_true = special_samples[self.truth_column.format(period)].values
@@ -545,6 +547,9 @@ class AbortionAbnormalPredictEvalData():
         if exclude_feiwen:
             # 剔除非瘟数据
             data = self.exclude_feiwen_data(data, period)
+            if hierarchical_data is None:
+                data.to_csv(f'exclude_feiwen_data_{period}.csv', index=False, encoding='utf-8')
+
 
         # 计算剔除后的样本数量
         filtered_samples_num = len(data)
