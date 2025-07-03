@@ -46,8 +46,7 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
         self.eval_running_dt_end = (eval_running_dt + pd.Timedelta(days=eval_interval)).strftime('%Y-%m-%d')
 
         # 获取真实值
-        # self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample(self.eval_running_dt_start, self.eval_running_dt_end, use_cache=use_cache)
-        self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample_v2(self.eval_running_dt_start, self.eval_running_dt_end, use_cache=use_cache)
+        self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample(self.eval_running_dt_start, self.eval_running_dt_end, use_cache=use_cache)
         self.index_sample.to_csv(config.abortion_abnormal_eval_index_sample_save_path, index=False, encoding='utf-8')
         self.sample_ground_truth.to_csv(config.abortion_abnormal_eval_ground_truth_save_path, index=False, encoding='utf-8')
 

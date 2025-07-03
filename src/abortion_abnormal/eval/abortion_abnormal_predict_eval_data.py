@@ -29,15 +29,17 @@ class AbortionAbnormalPredictEvalData():
         :param eval_running_dt_end: 评估结束日期
         :param logger: 日志记录器
         """
-        self.ground_truth_sample_num = len(sample_ground_truth)
-        self.predict_sample_num = len(predict_result)
-        self.recognition = self.ground_truth_sample_num / self.predict_sample_num if self.predict_sample_num > 0 else 0
+        ground_truth_sample_num = len(sample_ground_truth)
+        predict_sample_num = len(predict_result)
+        self.recognition = ground_truth_sample_num / predict_sample_num if predict_sample_num > 0 else 0
 
         self.predict_data = sample_ground_truth.merge(
             predict_result,
             on=['stats_dt', 'pigfarm_dk'],
             how='left'
         )
+
+        self.backup_data = self.predict_data.copy()
 
         self.eval_running_dt_start = pd.to_datetime(eval_running_dt_start)
         self.eval_running_dt_start_string = self.eval_running_dt_start.strftime('%Y-%m-%d')
@@ -548,7 +550,7 @@ class AbortionAbnormalPredictEvalData():
             # 剔除非瘟数据
             data = self.exclude_feiwen_data(data, period)
             # if hierarchical_data is None:
-            #     data.to_csv(f'exclude_feiwen_data_{period}.csv', index=False, encoding='utf-8')
+                # data.to_csv(f'exclude_feiwen_data_{period}.csv', index=False, encoding='utf-8')
 
 
         # 计算剔除后的样本数量
@@ -657,7 +659,6 @@ class AbortionAbnormalPredictEvalData():
 
     # 计算特殊样本指标
     def eval_special_samples(self, l2_name=None):
-        tmp_data = self.predict_data.copy() # 备份原始数据
         if l2_name is not None:
             # 如果指定了l2_name，则只计算该组织下的特殊样本
             self.predict_data = self.predict_data[self.predict_data['l2_org_inv_nm'].isin(l2_name)]
@@ -677,7 +678,7 @@ class AbortionAbnormalPredictEvalData():
         for abortion_period in tqdm(['1_7', '8_14', '15_21'], desc='计算normal_to_abnormal排除异常流产率指标'):
             self.special_sample_1_eval_one_periods_metric(abortion_period, 1, 2)
 
-        self.predict_data = tmp_data # 恢复原始数据
+        self.predict_data = self.backup_data.copy() # 恢复原始数据
         return self.result
 
     # 计算分级组织指标
@@ -859,5 +860,10 @@ class AbortionAbnormalPredictEvalData():
             result_df = pd.concat([pd.DataFrame([avg_data]), result_df], ignore_index=True)
 
         return result_df
+
+
+
+
+
 
 

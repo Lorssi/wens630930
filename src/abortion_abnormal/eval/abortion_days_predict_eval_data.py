@@ -36,7 +36,7 @@ class AbortionDaysPredictEvalData():
         self.predict_data = sample_ground_truth.merge(
             predict_result,
             on=['stats_dt', 'pigfarm_dk'],
-            how='left'
+            how='outer'
         )
 
         self.eval_running_dt_start = pd.to_datetime(eval_running_dt_start)
