@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 
-from abortion_abnormal.eval.build_eval_dateset import abortion_abnormal_index_sample
+from abortion_abnormal.eval.build_eval_dateset import abortion_abnormal_index_sample_v2
 
 # ads_pig_efficient_piglet_batch_analysis_day.csv 统计积压仔猪
 #     org_farm_dk：猪场数据键
@@ -36,6 +36,9 @@ class RuleBaseline:
         self.index_sample = index_sample
         self.get_data()
 
+        # delete 添加abort_1_7_decision，为了使用之前的评测代码
+        index_sample['abort_1_7_decision'] = 0
+
 
     def get_data(self):
         # 获取数据
@@ -51,6 +54,13 @@ class RuleBaseline:
         self.index_sample['stats_dt'] = pd.to_datetime(self.index_sample['stats_dt'])
         self.index_sample.sort_values(by=['pigfarm_dk', 'stats_dt'], inplace=True)
 
+
+    def judge_contition(self, stats_dt, day, data, column):
+        start = stats_dt - pd.Timedelta(days=day)
+        end = stats_dt
+        has_positive = any((data[column] >= start) &
+                            (data[column] <= end))
+        return has_positive
 
     # 入群前3天猪只检出抗原阳性
     def pig_check_out_3(self, pigfarm_dk):
@@ -74,27 +84,12 @@ class RuleBaseline:
             sample_idx = self.index_sample[(self.index_sample['pigfarm_dk'] == pigfarm_dk) &
                                       (self.index_sample['stats_dt'] == stats_dt)].index
 
-            # 判断abort_1_7_decision: stats_dt - 20到stats_dt
-            window_1_7_start = stats_dt - pd.Timedelta(days=20)
-            window_1_7_end = stats_dt
-            has_positive_1_7 = any((check_out_data['min_boar_inpop_dt'] >= window_1_7_start) &
-                                (check_out_data['min_boar_inpop_dt'] <= window_1_7_end))
-
-            # 判断abort_8_14_decision: stats_dt - 13到stats_dt
-            window_8_14_start = stats_dt - pd.Timedelta(days=13)
-            window_8_14_end = stats_dt
-            has_positive_8_14 = any((check_out_data['min_boar_inpop_dt'] >= window_8_14_start) &
-                                (check_out_data['min_boar_inpop_dt'] <= window_8_14_end))
-
-            # 判断abort_15_21_decision: stats_dt - 6到stats_dt
-            window_15_21_start = stats_dt - pd.Timedelta(days=6)
-            window_15_21_end = stats_dt
-            has_positive_15_21 = any((check_out_data['min_boar_inpop_dt'] >= window_15_21_start) &
-                                    (check_out_data['min_boar_inpop_dt'] <= window_15_21_end))
+            # 判断abort_8_14_decision: stats_dt - 21 到 stats_dt
+            has_positive_8_14 = self.judge_contition(stats_dt, 21, check_out_data, 'min_boar_inpop_dt')
+            # 判断abort_15_21_decision: stats_dt - 14到stats_dt
+            has_positive_15_21 = self.judge_contition(stats_dt, 14, check_out_data, 'min_boar_inpop_dt')
 
             # 只有当检测为阳性时才将决策值设置为1
-            if has_positive_1_7:
-                self.index_sample.loc[sample_idx, 'abort_1_7_decision'] = 1
             if has_positive_8_14:
                 self.index_sample.loc[sample_idx, 'abort_8_14_decision'] = 1
             if has_positive_15_21:
@@ -126,27 +121,12 @@ class RuleBaseline:
             sample_idx = self.index_sample[(self.index_sample['pigfarm_dk'] == pigfarm_dk) &
                                       (self.index_sample['stats_dt'] == stats_dt)].index
 
-            # 判断abort_1_7_decision: stats_dt - 20到stats_dt
-            window_1_7_start = stats_dt - pd.Timedelta(days=20)
-            window_1_7_end = stats_dt
-            has_positive_1_7 = any((overstock_data['stats_dt'] >= window_1_7_start) &
-                                (overstock_data['stats_dt'] <= window_1_7_end))
-
-            # 判断abort_8_14_decision: stats_dt - 13到stats_dt
-            window_8_14_start = stats_dt - pd.Timedelta(days=13)
-            window_8_14_end = stats_dt
-            has_positive_8_14 = any((overstock_data['stats_dt'] >= window_8_14_start) &
-                                (overstock_data['stats_dt'] <= window_8_14_end))
-
-            # 判断abort_15_21_decision: stats_dt - 6到stats_dt
-            window_15_21_start = stats_dt - pd.Timedelta(days=6)
-            window_15_21_end = stats_dt
-            has_positive_15_21 = any((overstock_data['stats_dt'] >= window_15_21_start) &
-                                    (overstock_data['stats_dt'] <= window_15_21_end))
+            # 判断abort_8_14_decision: stats_dt - 21到stats_dt
+            has_positive_8_14 = self.judge_contition(stats_dt, 21, overstock_data, 'stats_dt')
+            # 判断abort_15_21_decision: stats_dt - 14到stats_dt
+            has_positive_15_21 = self.judge_contition(stats_dt, 14, overstock_data, 'stats_dt')
 
             # 只有当检测为阳性时才将决策值设置为1
-            if has_positive_1_7:
-                self.index_sample.loc[sample_idx, 'abort_1_7_decision'] = 1
             if has_positive_8_14:
                 self.index_sample.loc[sample_idx, 'abort_8_14_decision'] = 1
             if has_positive_15_21:
@@ -177,28 +157,13 @@ class RuleBaseline:
             sample_idx = self.index_sample[(self.index_sample['pigfarm_dk'] == pigfarm_dk) &
                                       (self.index_sample['stats_dt'] == stats_dt)].index
 
-            # 判断abort_1_7_decision: stats_dt - 20到stats_dt
-            window_1_7_start = stats_dt - pd.Timedelta(days=20)
-            window_1_7_end = stats_dt
-            has_positive_1_7 = any((check_out_data['allot_dt'] >= window_1_7_start) &
-                                (check_out_data['allot_dt'] <= window_1_7_end))
-
-            # 判断abort_8_14_decision: stats_dt - 13到stats_dt
-            window_8_14_start = stats_dt - pd.Timedelta(days=13)
-            window_8_14_end = stats_dt
-            has_positive_8_14 = any((check_out_data['allot_dt'] >= window_8_14_start) &
-                                (check_out_data['allot_dt'] <= window_8_14_end))
-
-            # 判断abort_15_21_decision: stats_dt - 6到stats_dt
-            window_15_21_start = stats_dt - pd.Timedelta(days=6)
-            window_15_21_end = stats_dt
-            has_positive_15_21 = any((check_out_data['allot_dt'] >= window_15_21_start) &
-                                    (check_out_data['allot_dt'] <= window_15_21_end))
+            # 盘算abort_8_14_decision: stats_dt - 21到stats_dt
+            has_positive_8_14 = self.judge_contition(stats_dt, 21, check_out_data, 'allot_dt')
+            # 判断abort_15_21_decision: stats_dt - 14到stats_dt
+            has_positive_15_21 = self.judge_contition(stats_dt, 14, check_out_data, 'allot_dt')
 
             # 更新决策值
             # 只有当检测为阳性时才将决策值设置为1
-            if has_positive_1_7:
-                self.index_sample.loc[sample_idx, 'abort_1_7_decision'] = 1
             if has_positive_8_14:
                 self.index_sample.loc[sample_idx, 'abort_8_14_decision'] = 1
             if has_positive_15_21:
@@ -234,10 +199,10 @@ if __name__ == "__main__":
         ('2024-09-01', '2024-09-30', 9),
         ('2024-12-01', '2024-12-30', 12),
     ]:
-        index_sample, index_ground_truth = abortion_abnormal_index_sample(start_date, end_date)
+        index_sample, index_ground_truth = abortion_abnormal_index_sample_v2(start_date, end_date)
         baseline = RuleBaseline(start_date, end_date, index_sample)
         result = baseline.get_result()
-        save_path = f"data/predict/abortion_abnormal/rule_baseline/v1.0.0 rule_baseline/v1.0.0 rule_baseline {i}"
+        save_path = f"data/predict/abort_abnormal/v1.0.49 rule_baseline_v2/v1.0.49 rule_baseline_v2 {i}"
         os.makedirs(save_path, exist_ok=True)
-        result.to_csv(f"{save_path}/abort_abnormal.csv", index=False, encoding='utf-8-sig')
+        result.to_csv(f"{save_path}/abort_abnormal.csv", index=False, encoding='utf-8')
 
