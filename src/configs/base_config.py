@@ -30,6 +30,9 @@ class RawData(Enum):
 
     PIG_LET_DATA = RAW_DATA_DIR / "ads_pig_efficient_piglet_batch_analysis_day.csv"
 
+    # 猪场生产线数据
+    ADS_PIG_PROLINE_TOTAL_TO_ML_TRAINING_DAY = RAW_DATA_DIR / "ads_pig_proline_total_to_ml_training_day.csv"
+
     ABNORMAL_BOAR_REPORT_MODEL_DATA = RAW_DATA_DIR / "ADS_ABNORMAL_BOAR_REPORT_MODEL.csv"
 
 class FeatureData(Enum):
