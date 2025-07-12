@@ -46,8 +46,8 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
         self.eval_running_dt_end = (eval_running_dt + pd.Timedelta(days=eval_interval)).strftime('%Y-%m-%d')
 
         # 获取真实值
-        # self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample(self.eval_running_dt_start, self.eval_running_dt_end, use_cache=use_cache)
-        self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample_v2(self.eval_running_dt_start, self.eval_running_dt_end, use_cache=use_cache)
+        self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample(self.eval_running_dt_start, self.eval_running_dt_end, use_cache=use_cache)
+        # self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample_v2(self.eval_running_dt_start, self.eval_running_dt_end, use_cache=use_cache)
         self.index_sample.to_csv(config.abortion_abnormal_eval_index_sample_save_path, index=False, encoding='utf-8')
         self.sample_ground_truth.to_csv(config.abortion_abnormal_eval_ground_truth_save_path, index=False, encoding='utf-8')
 
@@ -570,6 +570,6 @@ if __name__ == "__main__":
     # train_predict_data = pd.read_csv('data/predict/abort_abnormal/v1.0.t train/v1.0.t train 12/abort_abnormal.csv')
     # all_pigfarm_evaluate(version=['v1.0.t'], features=['train'], predict_data=train_predict_data, pigfarm_dks=pigfarm_dks)
 
-    all_pigfarm_evaluate(version=['v1.0.49'], features=['abortion_abnormal_window_expand14'])
+    all_pigfarm_evaluate(version=['v1.0.79'], features=['before_tame_3d_check_out_yd_ratio_21d'])
 
 

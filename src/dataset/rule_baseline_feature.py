@@ -29,7 +29,7 @@ logging.basicConfig(format='%(asctime)s %(filename)s[line:%(lineno)d] %(levelnam
 logging.root.setLevel(level=logging.INFO)
 
 
-class RulBaselineFeature(BaseFeatureDataSet):
+class RuleBaselineFeature(BaseFeatureDataSet):
 
     def __init__(self, running_dt_end: str, train_interval: int, file_type: str, **param):
         super().__init__(param)
@@ -326,12 +326,777 @@ class RulBaselineFeature(BaseFeatureDataSet):
     
         self.data = data
 
+    def _get_before_tame_3d_check_out_ratio_21d_feature(self):
+        """获取近21天后备入群前三天猪只蓝耳阳性率特征 - 高效版"""
+        data = self.data.copy()
+        index_data = self.index_data.copy()
+        tame_risk_data = self.tame_risk_data.copy()
+
+        # 确保日期格式正确
+        if not pd.api.types.is_datetime64_dtype(index_data['stats_dt']):
+            index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        if not pd.api.types.is_datetime64_dtype(tame_risk_data['min_boar_inpop_dt']):
+            tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
+
+        # 1. 预计算每条记录的检出量和检测量，减少重复计算
+        tame_risk_data['check_out_sum'] = (tame_risk_data['rqbe3_blue_ear_kyyd_check_out_qty'] + 
+                                       tame_risk_data['rqbe3_blue_ear_kypt_check_out_qty'])
+        tame_risk_data['check_sum'] = (tame_risk_data['rqbe3_blue_ear_kyyd_check_qty'] + 
+                                   tame_risk_data['rqbe3_blue_ear_kypt_check_qty'])
+        
+        # 2. 按猪场和日期预先聚合数据，大幅减少后续处理量
+        tame_agg = tame_risk_data.groupby(['prorg_inv_dk', 'min_boar_inpop_dt']).agg({
+            'check_out_sum': 'sum',
+            'check_sum': 'sum'
+        }).reset_index()
+        
+        # 3. 创建结果列表
+        results = []
+        
+        # 4. 获取唯一猪场列表，避免重复处理
+        unique_farms = index_data['pigfarm_dk'].unique()
+        
+        # 5. 对每个猪场分别处理
+        for farm in unique_farms:
+            # 获取该猪场的所有日期，确保排序
+            farm_dates = index_data[index_data['pigfarm_dk'] == farm]['stats_dt'].sort_values()
+            
+            # 获取该猪场的检测数据，提前过滤减少数据量
+            farm_tests = tame_agg[tame_agg['prorg_inv_dk'] == farm].copy()
+            
+            if farm_tests.empty:
+                # 如果没有检测记录，快速添加零值结果
+                for dt in farm_dates:
+                    results.append({
+                        'stats_dt': dt,
+                        'pigfarm_dk': farm,
+                        'before_tame_3d_check_out_ratio_21d': np.nan
+                    })
+                continue
+            
+            # 排序检测日期，提高窗口筛选效率
+            farm_tests = farm_tests.sort_values('min_boar_inpop_dt')
+            
+            # 处理每个统计日期
+            for dt in farm_dates:
+                window_start = dt - pd.Timedelta(days=20)
+                
+                # 向量化筛选窗口内数据
+                window_data = farm_tests[
+                    (farm_tests['min_boar_inpop_dt'] >= window_start) & 
+                    (farm_tests['min_boar_inpop_dt'] <= dt)
+                ]
+                
+                if window_data.empty:
+                    ratio = np.nan
+                else:
+                    # 直接使用预计算的汇总值
+                    total_check_out = window_data['check_out_sum'].sum()
+                    total_check = window_data['check_sum'].sum()
+                    ratio = total_check_out / total_check if total_check > 0 else np.nan
+                
+                results.append({
+                    'stats_dt': dt,
+                    'pigfarm_dk': farm,
+                    'before_tame_3d_check_out_ratio_21d': ratio
+                })
+        
+        # 6. 一次性创建DataFrame并合并到原数据
+        if results:
+            result_df = pd.DataFrame(results)
+
+            if data.empty:
+                data = result_df
+            else:
+                data = pd.merge(
+                    data,
+                    result_df,
+                    on=['stats_dt', 'pigfarm_dk'],
+                    how='left'
+                )
+        else:
+            if data.empty:
+                data = index_data[['stats_dt', 'pigfarm_dk']].copy()
+                data['before_tame_3d_check_out_ratio_21d'] = np.nan
+            else:
+                data['before_tame_3d_check_out_ratio_21d'] = np.nan
+        
+        self.data = data
+        logger.info(f"{data.columns}")
+
+    def _get_before_tame_3d_check_out_yd_ratio_21d_feature(self):
+        """获取近21天后备入群前三天猪只蓝耳野毒阳性率特征 - 高效版"""
+        data = self.data.copy()
+        index_data = self.index_data.copy()
+        tame_risk_data = self.tame_risk_data.copy()
+
+        # 确保日期格式正确
+        if not pd.api.types.is_datetime64_dtype(index_data['stats_dt']):
+            index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        if not pd.api.types.is_datetime64_dtype(tame_risk_data['min_boar_inpop_dt']):
+            tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
+
+        # 1. 只预计算野毒的检出量和检测量
+        tame_risk_data['check_out_yd_sum'] = tame_risk_data['rqbe3_blue_ear_kyyd_check_out_qty']
+        tame_risk_data['check_yd_sum'] = tame_risk_data['rqbe3_blue_ear_kyyd_check_qty']
+    
+        # 2. 按猪场和日期预先聚合数据，大幅减少后续处理量
+        tame_agg = tame_risk_data.groupby(['prorg_inv_dk', 'min_boar_inpop_dt']).agg({
+            'check_out_yd_sum': 'sum',
+            'check_yd_sum': 'sum'
+        }).reset_index()
+    
+        # 3. 创建结果列表
+        results = []
+    
+        # 4. 获取唯一猪场列表，避免重复处理
+        unique_farms = index_data['pigfarm_dk'].unique()
+    
+        # 5. 对每个猪场分别处理
+        for farm in unique_farms:
+            # 获取该猪场的所有日期，确保排序
+            farm_dates = index_data[index_data['pigfarm_dk'] == farm]['stats_dt'].sort_values()
+            
+            # 获取该猪场的检测数据，提前过滤减少数据量
+            farm_tests = tame_agg[tame_agg['prorg_inv_dk'] == farm].copy()
+            
+            if farm_tests.empty:
+                # 如果没有检测记录，快速添加零值结果
+                for dt in farm_dates:
+                    results.append({
+                        'stats_dt': dt,
+                        'pigfarm_dk': farm,
+                        'before_tame_3d_check_out_yd_ratio_21d': np.nan
+                    })
+                continue
+            
+            # 排序检测日期，提高窗口筛选效率
+            farm_tests = farm_tests.sort_values('min_boar_inpop_dt')
+            
+            # 处理每个统计日期
+            for dt in farm_dates:
+                window_start = dt - pd.Timedelta(days=20)
+                
+                # 向量化筛选窗口内数据
+                window_data = farm_tests[
+                    (farm_tests['min_boar_inpop_dt'] >= window_start) & 
+                    (farm_tests['min_boar_inpop_dt'] <= dt)
+                ]
+                
+                if window_data.empty:
+                    ratio = np.nan
+                else:
+                    # 直接使用预计算的汇总值
+                    total_check_out = window_data['check_out_yd_sum'].sum()
+                    total_check = window_data['check_yd_sum'].sum()
+                    ratio = total_check_out / total_check if total_check > 0 else np.nan
+            
+                results.append({
+                    'stats_dt': dt,
+                    'pigfarm_dk': farm,
+                    'before_tame_3d_check_out_yd_ratio_21d': ratio
+                })
+    
+        # 6. 一次性创建DataFrame并合并到原数据
+        if results:
+            result_df = pd.DataFrame(results)
+
+            if data.empty:
+                data = result_df
+            else:
+                data = pd.merge(
+                    data,
+                    result_df,
+                    on=['stats_dt', 'pigfarm_dk'],
+                    how='left'
+                )
+        else:
+            if data.empty:
+                data = index_data[['stats_dt', 'pigfarm_dk']].copy()
+                data['before_tame_3d_check_out_yd_ratio_21d'] = np.nan
+            else:
+                data['before_tame_3d_check_out_yd_ratio_21d'] = np.nan
+    
+        self.data = data
+
+    def _get_after_tame_7d_check_out_ratio_21d_feature(self):
+        """获取近21天后备入群前三天猪只蓝耳阳性率特征 - 高效版"""
+        data = self.data.copy()
+        index_data = self.index_data.copy()
+        tame_risk_data = self.tame_risk_data.copy()
+
+        # 确保日期格式正确
+        if not pd.api.types.is_datetime64_dtype(index_data['stats_dt']):
+            index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        if not pd.api.types.is_datetime64_dtype(tame_risk_data['min_boar_inpop_dt']):
+            tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
+
+        # 1. 预计算每条记录的检出量和检测量，减少重复计算
+        tame_risk_data['check_out_sum'] = (tame_risk_data['rqaf7_blue_ear_kypt_check_out_qty'] + 
+                                       tame_risk_data['rqaf7_blue_ear_kypt_check_out_qty'])
+        tame_risk_data['check_sum'] = (tame_risk_data['rqaf7_blue_ear_kyyd_check_qty'] + 
+                                   tame_risk_data['rqaf7_blue_ear_kypt_check_qty'])
+        
+        # 2. 按猪场和日期预先聚合数据，大幅减少后续处理量
+        tame_agg = tame_risk_data.groupby(['prorg_inv_dk', 'min_boar_inpop_dt']).agg({
+            'check_out_sum': 'sum',
+            'check_sum': 'sum'
+        }).reset_index()
+        
+        # 3. 创建结果列表
+        results = []
+        
+        # 4. 获取唯一猪场列表，避免重复处理
+        unique_farms = index_data['pigfarm_dk'].unique()
+        
+        # 5. 对每个猪场分别处理
+        for farm in unique_farms:
+            # 获取该猪场的所有日期，确保排序
+            farm_dates = index_data[index_data['pigfarm_dk'] == farm]['stats_dt'].sort_values()
+            
+            # 获取该猪场的检测数据，提前过滤减少数据量
+            farm_tests = tame_agg[tame_agg['prorg_inv_dk'] == farm].copy()
+            
+            if farm_tests.empty:
+                # 如果没有检测记录，快速添加零值结果
+                for dt in farm_dates:
+                    results.append({
+                        'stats_dt': dt,
+                        'pigfarm_dk': farm,
+                        'after_tame_7d_check_out_ratio_21d': np.nan
+                    })
+                continue
+            
+            # 排序检测日期，提高窗口筛选效率
+            farm_tests = farm_tests.sort_values('min_boar_inpop_dt')
+            
+            # 处理每个统计日期
+            for dt in farm_dates:
+                window_start = dt - pd.Timedelta(days=20)
+                
+                # 向量化筛选窗口内数据
+                window_data = farm_tests[
+                    (farm_tests['min_boar_inpop_dt'] >= window_start) & 
+                    (farm_tests['min_boar_inpop_dt'] <= dt)
+                ]
+                
+                if window_data.empty:
+                    ratio = np.nan
+                else:
+                    # 直接使用预计算的汇总值
+                    total_check_out = window_data['check_out_sum'].sum()
+                    total_check = window_data['check_sum'].sum()
+                    ratio = total_check_out / total_check if total_check > 0 else np.nan
+                
+                results.append({
+                    'stats_dt': dt,
+                    'pigfarm_dk': farm,
+                    'after_tame_7d_check_out_ratio_21d': ratio
+                })
+        
+        # 6. 一次性创建DataFrame并合并到原数据
+        if results:
+            result_df = pd.DataFrame(results)
+
+            if data.empty:
+                data = result_df
+            else:
+                data = pd.merge(
+                    data,
+                    result_df,
+                    on=['stats_dt', 'pigfarm_dk'],
+                    how='left'
+                )
+        else:
+            if data.empty:
+                data = index_data[['stats_dt', 'pigfarm_dk']].copy()
+                data['after_tame_7d_check_out_ratio_21d'] = np.nan
+            else:
+                data['after_tame_7d_check_out_ratio_21d'] = np.nan
+        
+        self.data = data
+        logger.info(f"{data.columns}")
+
+    def _get_after_tame_7d_check_out_yd_ratio_21d_feature(self):
+        """获取近21天后备入群前三天猪只蓝耳野毒阳性率特征 - 高效版"""
+        data = self.data.copy()
+        index_data = self.index_data.copy()
+        tame_risk_data = self.tame_risk_data.copy()
+
+        # 确保日期格式正确
+        if not pd.api.types.is_datetime64_dtype(index_data['stats_dt']):
+            index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        if not pd.api.types.is_datetime64_dtype(tame_risk_data['min_boar_inpop_dt']):
+            tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
+
+        # 1. 只预计算野毒的检出量和检测量
+        tame_risk_data['check_out_yd_sum'] = tame_risk_data['rqaf7_blue_ear_kyyd_check_out_qty']
+        tame_risk_data['check_yd_sum'] = tame_risk_data['rqaf7_blue_ear_kyyd_check_qty']
+    
+        # 2. 按猪场和日期预先聚合数据，大幅减少后续处理量
+        tame_agg = tame_risk_data.groupby(['prorg_inv_dk', 'min_boar_inpop_dt']).agg({
+            'check_out_yd_sum': 'sum',
+            'check_yd_sum': 'sum'
+        }).reset_index()
+    
+        # 3. 创建结果列表
+        results = []
+    
+        # 4. 获取唯一猪场列表，避免重复处理
+        unique_farms = index_data['pigfarm_dk'].unique()
+    
+        # 5. 对每个猪场分别处理
+        for farm in unique_farms:
+            # 获取该猪场的所有日期，确保排序
+            farm_dates = index_data[index_data['pigfarm_dk'] == farm]['stats_dt'].sort_values()
+            
+            # 获取该猪场的检测数据，提前过滤减少数据量
+            farm_tests = tame_agg[tame_agg['prorg_inv_dk'] == farm].copy()
+            
+            if farm_tests.empty:
+                # 如果没有检测记录，快速添加零值结果
+                for dt in farm_dates:
+                    results.append({
+                        'stats_dt': dt,
+                        'pigfarm_dk': farm,
+                        'after_tame_7d_check_out_yd_ratio_21d': np.nan
+                    })
+                continue
+            
+            # 排序检测日期，提高窗口筛选效率
+            farm_tests = farm_tests.sort_values('min_boar_inpop_dt')
+            
+            # 处理每个统计日期
+            for dt in farm_dates:
+                window_start = dt - pd.Timedelta(days=20)
+                
+                # 向量化筛选窗口内数据
+                window_data = farm_tests[
+                    (farm_tests['min_boar_inpop_dt'] >= window_start) & 
+                    (farm_tests['min_boar_inpop_dt'] <= dt)
+                ]
+                
+                if window_data.empty:
+                    ratio = np.nan
+                else:
+                    # 直接使用预计算的汇总值
+                    total_check_out = window_data['check_out_yd_sum'].sum()
+                    total_check = window_data['check_yd_sum'].sum()
+                    ratio = total_check_out / total_check if total_check > 0 else np.nan
+            
+                results.append({
+                    'stats_dt': dt,
+                    'pigfarm_dk': farm,
+                    'after_tame_7d_check_out_yd_ratio_21d': ratio
+                })
+    
+        # 6. 一次性创建DataFrame并合并到原数据
+        if results:
+            result_df = pd.DataFrame(results)
+
+            if data.empty:
+                data = result_df
+            else:
+                data = pd.merge(
+                    data,
+                    result_df,
+                    on=['stats_dt', 'pigfarm_dk'],
+                    how='left'
+                )
+        else:
+            if data.empty:
+                data = index_data[['stats_dt', 'pigfarm_dk']].copy()
+                data['after_tame_7d_check_out_yd_ratio_21d'] = np.nan
+            else:
+                data['after_tame_7d_check_out_yd_ratio_21d'] = np.nan
+    
+        self.data = data
+
+    def _get_before_tame_3d_ct_mean_21d_feature(self):
+        """获取近21天后备入群前三天CT值均值特征 - 高效版"""
+        data = self.data.copy()
+        index_data = self.index_data.copy()
+        tame_risk_data = self.tame_risk_data.copy()
+
+        # 确保日期格式正确
+        if not pd.api.types.is_datetime64_dtype(index_data['stats_dt']):
+            index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        if not pd.api.types.is_datetime64_dtype(tame_risk_data['min_boar_inpop_dt']):
+            tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
+
+        # 1. 过滤出有CT值的数据，减少后续处理量
+        ct_data = tame_risk_data.dropna(subset=['rqbe3_blue_ear_kypt_check_ct'])
+    
+        # 2. 按猪场和日期分组计算每日CT均值
+        daily_ct_avg = ct_data.groupby(['prorg_inv_dk', 'min_boar_inpop_dt'])['rqbe3_blue_ear_kypt_check_ct'].mean().reset_index()
+        daily_ct_avg.rename(columns={'rqbe3_blue_ear_kypt_check_ct': 'daily_ct_avg'}, inplace=True)
+    
+        # 3. 创建结果列表
+        results = []
+    
+        # 4. 获取唯一猪场列表，避免重复处理
+        unique_farms = index_data['pigfarm_dk'].unique()
+    
+        # 5. 对每个猪场分别处理
+        for farm in unique_farms:
+            # 获取该猪场的所有日期，确保排序
+            farm_dates = index_data[index_data['pigfarm_dk'] == farm]['stats_dt'].sort_values()
+            
+            # 获取该猪场的CT数据，提前过滤减少数据量
+            farm_ct_data = daily_ct_avg[daily_ct_avg['prorg_inv_dk'] == farm].copy()
+            
+            if farm_ct_data.empty:
+                # 如果没有CT记录，快速添加NaN值结果
+                for dt in farm_dates:
+                    results.append({
+                        'stats_dt': dt,
+                        'pigfarm_dk': farm,
+                        'before_tame_3d_ct_mean_21d': np.nan
+                    })
+                continue
+        
+            # 排序记录日期，提高窗口筛选效率
+            farm_ct_data = farm_ct_data.sort_values('min_boar_inpop_dt')
+        
+            # 处理每个统计日期
+            for dt in farm_dates:
+                window_start = dt - pd.Timedelta(days=20)
+                
+                # 向量化筛选窗口内数据
+                window_data = farm_ct_data[
+                    (farm_ct_data['min_boar_inpop_dt'] >= window_start) & 
+                    (farm_ct_data['min_boar_inpop_dt'] <= dt)
+                ]
+                
+                if window_data.empty:
+                    ct_mean = np.nan
+                else:
+                    # 计算21天窗口内的CT均值
+                    ct_mean = window_data['daily_ct_avg'].mean()
+            
+                results.append({
+                    'stats_dt': dt,
+                    'pigfarm_dk': farm,
+                    'before_tame_3d_ct_mean_21d': ct_mean
+                })
+    
+        # 6. 一次性创建DataFrame并合并到原数据
+        if results:
+            result_df = pd.DataFrame(results)
+
+            if data.empty:
+                data = result_df
+            else:
+                data = pd.merge(
+                    data,
+                    result_df,
+                    on=['stats_dt', 'pigfarm_dk'],
+                    how='left'
+                )
+        else:
+            if data.empty:
+                data = index_data[['stats_dt', 'pigfarm_dk']].copy()
+                data['before_tame_3d_ct_mean_21d'] = np.nan
+            else:
+                data['before_tame_3d_ct_mean_21d'] = np.nan
+    
+        self.data = data
+
+    def _get_before_tame_3d_ct_min_21d_feature(self):
+        """获取近21天后备入群前三天CT值最小值特征 - 高效版"""
+        data = self.data.copy()
+        index_data = self.index_data.copy()
+        tame_risk_data = self.tame_risk_data.copy()
+
+        # 确保日期格式正确
+        if not pd.api.types.is_datetime64_dtype(index_data['stats_dt']):
+            index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        if not pd.api.types.is_datetime64_dtype(tame_risk_data['min_boar_inpop_dt']):
+            tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
+
+        # 1. 过滤出有CT值的数据，减少后续处理量
+        ct_data = tame_risk_data.dropna(subset=['rqbe3_blue_ear_kypt_check_ct'])
+        
+        # 2. 按猪场和日期分组计算每日CT均值
+        daily_ct_avg = ct_data.groupby(['prorg_inv_dk', 'min_boar_inpop_dt'])['rqbe3_blue_ear_kypt_check_ct'].mean().reset_index()
+        daily_ct_avg.rename(columns={'rqbe3_blue_ear_kypt_check_ct': 'daily_ct_avg'}, inplace=True)
+        
+        # 3. 创建结果列表
+        results = []
+        
+        # 4. 获取唯一猪场列表，避免重复处理
+        unique_farms = index_data['pigfarm_dk'].unique()
+        
+        # 5. 对每个猪场分别处理
+        for farm in unique_farms:
+            # 获取该猪场的所有日期，确保排序
+            farm_dates = index_data[index_data['pigfarm_dk'] == farm]['stats_dt'].sort_values()
+            
+            # 获取该猪场的CT数据，提前过滤减少数据量
+            farm_ct_data = daily_ct_avg[daily_ct_avg['prorg_inv_dk'] == farm].copy()
+            
+            if farm_ct_data.empty:
+                # 如果没有CT记录，快速添加NaN值结果
+                for dt in farm_dates:
+                    results.append({
+                        'stats_dt': dt,
+                        'pigfarm_dk': farm,
+                        'before_tame_3d_ct_min_21d': np.nan
+                    })
+                continue
+            
+            # 排序记录日期，提高窗口筛选效率
+            farm_ct_data = farm_ct_data.sort_values('min_boar_inpop_dt')
+            
+            # 处理每个统计日期
+            for dt in farm_dates:
+                window_start = dt - pd.Timedelta(days=20)
+                
+                # 向量化筛选窗口内数据
+                window_data = farm_ct_data[
+                    (farm_ct_data['min_boar_inpop_dt'] >= window_start) & 
+                    (farm_ct_data['min_boar_inpop_dt'] <= dt)
+                ]
+                
+                if window_data.empty:
+                    ct_min = np.nan
+                else:
+                    # 计算21天窗口内的CT最小值 (而不是均值)
+                    ct_min = window_data['daily_ct_avg'].min()
+                
+                results.append({
+                    'stats_dt': dt,
+                    'pigfarm_dk': farm,
+                    'before_tame_3d_ct_min_21d': ct_min
+                })
+        
+        # 6. 一次性创建DataFrame并合并到原数据
+        if results:
+            result_df = pd.DataFrame(results)
+
+            if data.empty:
+                data = result_df
+            else:
+                data = pd.merge(
+                    data,
+                    result_df,
+                    on=['stats_dt', 'pigfarm_dk'],
+                    how='left'
+                )
+        else:
+            if data.empty:
+                data = index_data[['stats_dt', 'pigfarm_dk']].copy()
+                data['before_tame_3d_ct_min_21d'] = np.nan
+            else:
+                data['before_tame_3d_ct_min_21d'] = np.nan
+        
+        self.data = data
+
+    def _get_before_tame_3d_ct_quantile_mean_21d_feature(self):
+        """获取近21天后备入群前三天CT值分位数均值特征"""
+        data = self.data.copy()
+        index_data = self.index_data.copy()
+        tame_risk_data = self.tame_risk_data.copy()
+
+        # 确保日期格式正确
+        if not pd.api.types.is_datetime64_dtype(index_data['stats_dt']):
+            index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        if not pd.api.types.is_datetime64_dtype(tame_risk_data['min_boar_inpop_dt']):
+            tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
+
+        # 1. 过滤出有CT值的数据
+        ct_data = tame_risk_data.dropna(subset=['rqbe3_blue_ear_kypt_check_ct'])
+        
+        # 2. 获取所有CT值以计算整体分布
+        all_ct_values = ct_data['rqbe3_blue_ear_kypt_check_ct'].values
+        
+        # 3. 对每个CT值计算其在整体分布中的分位数
+        ct_data['ct_quantile'] = ct_data['rqbe3_blue_ear_kypt_check_ct'].apply(
+            lambda x: np.mean(all_ct_values <= x)  # 计算分位数
+        )
+        
+        # 4. 按猪场和日期分组计算每日CT分位数均值
+        daily_ct_quantile = ct_data.groupby(['prorg_inv_dk', 'min_boar_inpop_dt'])['ct_quantile'].mean().reset_index()
+        daily_ct_quantile.rename(columns={'ct_quantile': 'daily_ct_quantile'}, inplace=True)
+        
+        # 5. 创建结果列表
+        results = []
+        
+        # 6. 获取唯一猪场列表
+        unique_farms = index_data['pigfarm_dk'].unique()
+        
+        # 7. 对每个猪场分别处理
+        for farm in unique_farms:
+            # 获取该猪场的所有日期，确保排序
+            farm_dates = index_data[index_data['pigfarm_dk'] == farm]['stats_dt'].sort_values()
+            
+            # 获取该猪场的CT分位数数据
+            farm_ct_data = daily_ct_quantile[daily_ct_quantile['prorg_inv_dk'] == farm].copy()
+            
+            if farm_ct_data.empty:
+                # 如果没有CT记录，添加NaN值结果
+                for dt in farm_dates:
+                    results.append({
+                        'stats_dt': dt,
+                        'pigfarm_dk': farm,
+                        'before_tame_3d_ct_quantile_mean_21d': np.nan
+                    })
+                continue
+            
+            # 排序记录日期
+            farm_ct_data = farm_ct_data.sort_values('min_boar_inpop_dt')
+            
+            # 处理每个统计日期
+            for dt in farm_dates:
+                window_start = dt - pd.Timedelta(days=20)
+                
+                # 筛选窗口内数据
+                window_data = farm_ct_data[
+                    (farm_ct_data['min_boar_inpop_dt'] >= window_start) & 
+                    (farm_ct_data['min_boar_inpop_dt'] <= dt)
+                ]
+                
+                if window_data.empty:
+                    quantile_mean = np.nan
+                else:
+                    # 计算21天窗口内的CT分位数均值
+                    quantile_mean = window_data['daily_ct_quantile'].mean()
+                
+                results.append({
+                    'stats_dt': dt,
+                    'pigfarm_dk': farm,
+                    'before_tame_3d_ct_quantile_mean_21d': quantile_mean
+                })
+        
+        # 8. 创建DataFrame并合并到原数据
+        if results:
+            result_df = pd.DataFrame(results)
+
+            if data.empty:
+                data = result_df
+            else:
+                data = pd.merge(
+                    data,
+                    result_df,
+                    on=['stats_dt', 'pigfarm_dk'],
+                    how='left'
+                )
+        else:
+            if data.empty:
+                data = index_data[['stats_dt', 'pigfarm_dk']].copy()
+                data['before_tame_3d_ct_quantile_mean_21d'] = np.nan
+            else:
+                data['before_tame_3d_ct_quantile_mean_21d'] = np.nan
+        
+        self.data = data
+
+    # ========================引种特征计算========================
+    def _get_before_intro_8_30_check_out_ratio_21d_feature(self):
+        """获取近21天后备入群前三天猪只蓝耳阳性率特征 - 高效版"""
+        data = self.data.copy()
+        index_data = self.index_data.copy()
+        tame_risk_data = self.tame_risk_data.copy()
+
+        # 确保日期格式正确
+        if not pd.api.types.is_datetime64_dtype(index_data['stats_dt']):
+            index_data['stats_dt'] = pd.to_datetime(index_data['stats_dt'])
+        if not pd.api.types.is_datetime64_dtype(tame_risk_data['min_boar_inpop_dt']):
+            tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
+
+        # 1. 预计算每条记录的检出量和检测量，减少重复计算
+        tame_risk_data['check_out_sum'] = (tame_risk_data['rqbe3_blue_ear_kyyd_check_out_qty'] + 
+                                       tame_risk_data['rqbe3_blue_ear_kypt_check_out_qty'])
+        tame_risk_data['check_sum'] = (tame_risk_data['rqbe3_blue_ear_kyyd_check_qty'] + 
+                                   tame_risk_data['rqbe3_blue_ear_kypt_check_qty'])
+        
+        # 2. 按猪场和日期预先聚合数据，大幅减少后续处理量
+        tame_agg = tame_risk_data.groupby(['prorg_inv_dk', 'min_boar_inpop_dt']).agg({
+            'check_out_sum': 'sum',
+            'check_sum': 'sum'
+        }).reset_index()
+        
+        # 3. 创建结果列表
+        results = []
+        
+        # 4. 获取唯一猪场列表，避免重复处理
+        unique_farms = index_data['pigfarm_dk'].unique()
+        
+        # 5. 对每个猪场分别处理
+        for farm in unique_farms:
+            # 获取该猪场的所有日期，确保排序
+            farm_dates = index_data[index_data['pigfarm_dk'] == farm]['stats_dt'].sort_values()
+            
+            # 获取该猪场的检测数据，提前过滤减少数据量
+            farm_tests = tame_agg[tame_agg['prorg_inv_dk'] == farm].copy()
+            
+            if farm_tests.empty:
+                # 如果没有检测记录，快速添加零值结果
+                for dt in farm_dates:
+                    results.append({
+                        'stats_dt': dt,
+                        'pigfarm_dk': farm,
+                        'before_tame_3d_check_out_ratio_21d': np.nan
+                    })
+                continue
+            
+            # 排序检测日期，提高窗口筛选效率
+            farm_tests = farm_tests.sort_values('min_boar_inpop_dt')
+            
+            # 处理每个统计日期
+            for dt in farm_dates:
+                window_start = dt - pd.Timedelta(days=20)
+                
+                # 向量化筛选窗口内数据
+                window_data = farm_tests[
+                    (farm_tests['min_boar_inpop_dt'] >= window_start) & 
+                    (farm_tests['min_boar_inpop_dt'] <= dt)
+                ]
+                
+                if window_data.empty:
+                    ratio = np.nan
+                else:
+                    # 直接使用预计算的汇总值
+                    total_check_out = window_data['check_out_sum'].sum()
+                    total_check = window_data['check_sum'].sum()
+                    ratio = total_check_out / total_check if total_check > 0 else np.nan
+                
+                results.append({
+                    'stats_dt': dt,
+                    'pigfarm_dk': farm,
+                    'before_tame_3d_check_out_ratio_21d': ratio
+                })
+        
+        # 6. 一次性创建DataFrame并合并到原数据
+        if results:
+            result_df = pd.DataFrame(results)
+
+            if data.empty:
+                data = result_df
+            else:
+                data = pd.merge(
+                    data,
+                    result_df,
+                    on=['stats_dt', 'pigfarm_dk'],
+                    how='left'
+                )
+        else:
+            if data.empty:
+                data = index_data[['stats_dt', 'pigfarm_dk']].copy()
+                data['before_tame_3d_check_out_ratio_21d'] = np.nan
+            else:
+                data['before_tame_3d_check_out_ratio_21d'] = np.nan
+        
+        self.data = data
+        logger.info(f"{data.columns}")
+
+
     def _post_processing_data(self):
         if self.data.isnull().any().any():
             logger.info("Warning: Null in org_feature_data.csv")
         self.file_name = "org_feature_data." + self.file_type
 
         data = self.data.copy()
+        logger.info(f"{data.columns}")
         data['stats_dt'] = pd.to_datetime(data['stats_dt'])
         data['stats_dt'] = data['stats_dt'] + pd.DateOffset(days=1)  # 将日期加1天
         self.data = data
@@ -340,19 +1105,13 @@ class RulBaselineFeature(BaseFeatureDataSet):
         logger.info("-----Preprocessing data----- ")
         self._preprocessing_data()
         logger.info("Calculating check_out_3 purchase...")
-        self._get_check_out_3_feature()
-        logger.info("Calculating check_out_3 21 days purchase...")
-        self._get_check_out_3_21d_feature()
-        logger.info("Calculating check_out_3 21 days purchase...")
-        self._get_check_out_3_21d_feature()
-        logger.info("Calculating piglet_overstock purchase...")
-        self._get_piglet_overstock_feature()
-        logger.info("Calculating piglet_overstock 21 days purchase...")
-        self._get_piglet_overstock_21d_feature()
-        logger.info("Calculating pig_check_out_8_30 purchase...")
-        self._get_pig_check_out_8_30_feature()
-        logger.info("Calculating pig_check_out_8_30 21 days purchase...")
-        self._get_pig_check_out_8_30_21d_feature()
+        self._get_before_tame_3d_check_out_ratio_21d_feature()
+        self._get_before_tame_3d_check_out_yd_ratio_21d_feature()
+        # self._get_after_tame_7d_check_out_ratio_21d_feature()
+        # self._get_after_tame_7d_check_out_yd_ratio_21d_feature()
+        # self._get_before_tame_3d_ct_mean_21d_feature()
+        # self._get_before_tame_3d_ct_min_21d_feature()
+        # self._get_before_tame_3d_ct_quantile_mean_21d_feature()
         logger.info("-----Postprocessing data----- ")
         self._post_processing_data()
         # logger.info("-----Save as : {}".format("/".join([config.FEATURE_STORE_ROOT, self.file_name])))

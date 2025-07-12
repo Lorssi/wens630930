@@ -329,10 +329,10 @@ class Has_Risk_NFM_MultiLabel_7d1Linear(nn.Module):
         
         # 为需处理的连续特征创建变换
         self.continuous_transforms = nn.ModuleDict()
-        past_7d_abortion_features = [f'abortion_rate_past_{day + 1}d' for day in range(7)]
+        self.past_7d_abortion_features = [f'abortion_rate_past_{day + 1}d' for day in range(7)]
         for feat in self.continuous_cols:
-            if feat in past_7d_abortion_features:
-                self.continuous_transforms['abortion_all_7d'] = nn.Linear(1, self.embedding_dim)
+            if feat in self.past_7d_abortion_features:
+                self.continuous_transforms['abortion_rate_past7d'] = nn.Linear(1, self.embedding_dim)
             else:
                 self.continuous_transforms[feat] = nn.Linear(1, self.embedding_dim)
         
@@ -379,7 +379,6 @@ class Has_Risk_NFM_MultiLabel_7d1Linear(nn.Module):
                     embeddings_list.append(feat_emb)
         
         # 处理连续特征
-        past_7d_abortion_features = [f'abortion_rate_past_{day + 1}d' for day in range(7)]
         for feat in self.continuous_cols:
             if feat in self.continuous_transforms:
                 # 使用预先定义的特征索引
@@ -397,7 +396,7 @@ class Has_Risk_NFM_MultiLabel_7d1Linear(nn.Module):
                     # 应用掩码
                     feat_emb = feat_emb * mask_data.expand_as(feat_emb)
                     embeddings_list.append(feat_emb)
-            elif feat in past_7d_abortion_features:
+            elif feat in self.past_7d_abortion_features:
                 # 使用预先定义的特征索引
                 feat_idx = self.feature_indices[feat]
                 mask_idx = feat_idx + 1  # 掩码总是紧跟在特征后面
@@ -409,7 +408,7 @@ class Has_Risk_NFM_MultiLabel_7d1Linear(nn.Module):
                     mask_data = x[:, mask_idx].float().view(batch_size, 1)
                     
                     # 通过线性层处理
-                    feat_emb = self.continuous_transforms['abortion_all_7d'](feat_data)
+                    feat_emb = self.continuous_transforms['abortion_rate_past7d'](feat_data)
                     # 应用掩码
                     feat_emb = feat_emb * mask_data.expand_as(feat_emb)
                     embeddings_list.append(feat_emb)

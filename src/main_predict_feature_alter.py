@@ -171,7 +171,7 @@ def predict_model(model, predict_loader, device, predict_index):
 if __name__ == "__main__":
     logger.info("开始数据加载和预处理...")
     index_df = pd.read_csv(config.main_predict.PREDICT_INDEX_TABLE, encoding='utf-8-sig')
-    index_df = index_df[index_df['pigfarm_dk'] == 'bDoAAKurSXDM567U']
+
     if index_df is None:
         logger.error("索引数据加载失败，程序退出。")
         exit()

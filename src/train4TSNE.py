@@ -325,7 +325,7 @@ def visualize_tsne(features, labels=None, perplexity=30, n_components=2, title='
     if labels is not None and len(labels) > 0:
         # 如果有标签数据，使用标签颜色
         scatter = plt.scatter(tsne_results[:, 0], tsne_results[:, 1], 
-                    c=labels, cmap='viridis', alpha=0.8, s=30)
+                    c=labels, cmap='viridis', alpha=0.1, s=30)
         plt.colorbar(scatter, label='类别')
     # else:
     #     # 如果没有标签，使用密度图
