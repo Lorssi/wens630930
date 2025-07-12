@@ -417,8 +417,8 @@ class AbortionAbnormalPredictEvalData():
             self.logger.warning(f"没有找到满足条件的特殊样本，abortion_period: {period}")
             return
 
-        if prev_status == 0 and next_status == 1:
-            special_samples.to_csv(f'special_samples_exclude_feiwen_{period}.csv', index=False, encoding='utf-8')
+        # if prev_status == 0 and next_status == 1:
+        #     special_samples.to_csv(f'special_samples_exclude_feiwen_{period}.csv', index=False, encoding='utf-8')
 
         # 3. 计算评估指标
         y_true = special_samples[self.truth_column.format(period)].values
@@ -547,8 +547,8 @@ class AbortionAbnormalPredictEvalData():
         if exclude_feiwen:
             # 剔除非瘟数据
             data = self.exclude_feiwen_data(data, period)
-            if hierarchical_data is None:
-                data.to_csv(f'exclude_feiwen_data_{period}.csv', index=False, encoding='utf-8')
+            # if hierarchical_data is None:
+            #     data.to_csv(f'exclude_feiwen_data_{period}.csv', index=False, encoding='utf-8')
 
 
         # 计算剔除后的样本数量
