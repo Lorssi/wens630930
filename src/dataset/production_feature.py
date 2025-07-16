@@ -403,6 +403,122 @@ class ProductionFeature(BaseFeatureDataSet):
         self.data = data.copy()
         logger.info("过去7天流产率特征计算完成")
 
+    def _get_first_order_diff_feature(self):
+        """
+        计算流产率的一阶差分特征:
+        abortion_rate_diff_1d: 当天与1天前的流产率差值
+        abortion_rate_diff_2d: 1天前与2天前的流产率差值
+        abortion_rate_diff_3d: 2天前与3天前的流产率差值
+        abortion_rate_diff_4d: 3天前与4天前的流产率差值
+        abortion_rate_diff_5d: 4天前与5天前的流产率差值
+        abortion_rate_diff_6d: 5天前与6天前的流产率差值
+        
+        同时计算存栏量的一阶差分
+        """
+        data = self.data.copy()
+        
+        # 确保数据按猪场和日期排序
+        data = data.sort_values(['pigfarm_dk', 'stats_dt'])
+        
+        # 计算流产率的一阶差分，直接使用abortion_rate
+        for i in range(1, 7):
+            # 当前移动i天的流产率
+            current_day_rate = data.groupby('pigfarm_dk')['abortion_rate'].shift(i-1)
+            # 前一天移动i+1天的流产率
+            next_day_rate = data.groupby('pigfarm_dk')['abortion_rate'].shift(i)
+            
+            # 计算一阶差分
+            diff_col = f'abortion_rate_diff_{i}d'
+            data[diff_col] = current_day_rate - next_day_rate
+        
+        self.data = data.copy()
+        logger.info("流产率一阶差分特征计算完成")
+
+    def _get_second_order_diff_feature(self):
+        """
+        计算流产率的二阶差分特征:
+        abortion_rate_diff2_1d: abortion_rate_diff_1d与abortion_rate_diff_2d的差值
+        abortion_rate_diff2_2d: abortion_rate_diff_2d与abortion_rate_diff_3d的差值
+        abortion_rate_diff2_3d: abortion_rate_diff_3d与abortion_rate_diff_4d的差值
+        abortion_rate_diff2_4d: abortion_rate_diff_4d与abortion_rate_diff_5d的差值
+        abortion_rate_diff2_5d: abortion_rate_diff_5d与abortion_rate_diff_6d的差值
+        
+        二阶差分反映了流产率变化速度的变化情况
+        """
+        data = self.data.copy()
+        
+        # 确保数据按猪场和日期排序
+        data = data.sort_values(['pigfarm_dk', 'stats_dt'])
+        
+        # 方法一：使用一阶差分计算二阶差分
+        for i in range(1, 6):
+            current_diff_col = f'abortion_rate_diff_{i}d'
+            next_diff_col = f'abortion_rate_diff_{i+1}d'
+            
+            # 确保这些列存在于数据中
+            if current_diff_col in data.columns and next_diff_col in data.columns:
+                diff2_col = f'abortion_rate_diff2_{i}d'
+                data[diff2_col] = data[current_diff_col] - data[next_diff_col]
+        
+        # 方法二：直接从原始数据计算二阶差分
+        # 二阶差分公式：f(x) - 2*f(x-1) + f(x-2)
+        # for i in range(1, 6):
+        #     # 当天的流产率
+        #     current_rate = data.groupby('pigfarm_dk')['abortion_rate'].shift(i-1)
+        #     # 前一天的流产率
+        #     prev1_rate = data.groupby('pigfarm_dk')['abortion_rate'].shift(i)
+        #     # 前两天的流产率
+        #     prev2_rate = data.groupby('pigfarm_dk')['abortion_rate'].shift(i+1)
+            
+        #     # 计算二阶差分
+        #     diff2_col = f'abortion_rate_diff2_direct_{i}d'
+        #     data[diff2_col] = current_rate - 2 * prev1_rate + prev2_rate
+        
+        self.data = data.copy()
+        logger.info("流产率二阶差分特征计算完成")
+
+    def _get_moving_average_trend_feature(self):
+        """
+        计算流产率的移动平均趋势特征:
+        1. abortion_rate_ma_3d: 短期移动平均（3天）
+        2. abortion_rate_ma_5d: 中期移动平均（5天）
+        3. abortion_rate_ma_7d: 长期移动平均（7天）
+        4. abortion_rate_ma_diff: 短期与长期移动平均差值
+        
+        移动平均趋势可以反映流产率的变化方向
+        """
+        data = self.data.copy()
+        
+        # 确保数据按猪场和日期排序
+        data = data.sort_values(['pigfarm_dk', 'stats_dt'])
+        
+        # 使用abortion_rate和shift计算过去7天的流产率
+        for i in range(1, 8):
+            data[f'ar_past_{i}d'] = data.groupby('pigfarm_dk')['abortion_rate'].shift(i-1)
+        
+        # 计算短期移动平均（3天）
+        data['abortion_rate_ma_3d'] = (data['ar_past_1d'] + data['ar_past_2d'] + data['ar_past_3d']) / 3
+        
+        # 计算中期移动平均（5天）
+        data['abortion_rate_ma_5d'] = (data['ar_past_1d'] + data['ar_past_2d'] + data['ar_past_3d'] + 
+                                    data['ar_past_4d'] + data['ar_past_5d']) / 5
+        
+        # 计算长期移动平均（7天）
+        data['abortion_rate_ma_7d'] = (data['ar_past_1d'] + data['ar_past_2d'] + data['ar_past_3d'] + 
+                                    data['ar_past_4d'] + data['ar_past_5d'] + data['ar_past_6d'] + 
+                                    data['ar_past_7d']) / 7
+        
+        # 计算短期与长期移动平均差值
+        data['abortion_rate_ma_diff'] = data['abortion_rate_ma_3d'] - data['abortion_rate_ma_7d']
+        
+        # 移除临时计算列
+        data = data.drop([f'ar_past_{i}d' for i in range(1, 8)], axis=1)
+        
+        self.data = data.copy()
+        logger.info("流产率移动平均趋势特征计算完成")
+
+
+
     def _calculate_abortion_rate(self, data, id_column='pigfarm_dk'):
         """
         计算流产率
@@ -870,6 +986,8 @@ class ProductionFeature(BaseFeatureDataSet):
         self.file_name = "production_feature_data." + self.file_type
 
         past_7d_abortion_features = [f'abortion_rate_past_{day + 1}d' for day in range(7)]
+        abortion_first_diff = [f'abortion_rate_diff_{day}d' for day in range(1, 7)]
+        abortion_second_diff = [f'abortion_rate_diff2_{day}d' for day in range(1, 6)]
         production_feature_list = ['stats_dt', 'pigfarm_dk', 'abortion_rate','abortion_mean_recent_7d',
                                    'abortion_mean_recent_14d', 'abortion_mean_recent_21d',
                                    'boar_transin_times_30d', 'boar_transin_qty_30d',
@@ -877,8 +995,8 @@ class ProductionFeature(BaseFeatureDataSet):
                                    'preg_stock_sqty_change_ratio_7d', 'preg_stock_sqty_change_ratio_15d','preg_stock_sqty',
                                    'reserve_sow_sqty_change_ratio_7d', 'reserve_sow_sqty_change_ratio_15d','reserve_sow_sqty', 'reserve_sow_30day_avg',
                                    'basesow_sqty_change_ratio_7d', 'basesow_sqty_change_ratio_15d','basesow_sqty',
-                                   'pigfarm_loss_rate', 'line_loss_rate', 'line_health_rate'] + past_7d_abortion_features
-
+                                   ] + past_7d_abortion_features
+        
         data = data[production_feature_list]
         data['stats_dt'] = pd.to_datetime(data['stats_dt'])
         data['stats_dt'] = data['stats_dt'] + pd.DateOffset(days=1)
@@ -909,6 +1027,10 @@ class ProductionFeature(BaseFeatureDataSet):
         logger.info("-----get line health rate-----")
         self._get_line_health()
         logger.info("-----Postprocessing data----- ")
+        logger.info("-----get abortion trend feature-----")
+        self._get_first_order_diff_feature()
+        self._get_second_order_diff_feature()
+        self._get_moving_average_trend_feature()
         self._post_processing_data()
         # logger.info("-----Save as : {}".format("/".join([config.FEATURE_STORE_ROOT, self.file_name])))
         logger.info("-----Save as : {}".format(config.FeatureData.PRODUCTION_FEATURE_DATA.value))

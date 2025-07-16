@@ -99,7 +99,7 @@ class ModulePath(Enum):
         #  'params': {}},
         {'dataset_name': 'dataset.rule_baseline_feature',
          'file_type': 'csv',
-         'main_class_name': 'RulBaselineFeature',
+         'main_class_name': 'RuleBaselineFeature',
          'params': {}},
         # {'dataset_name': 'dataset.abnormal_breed_sow_feature',
         #  'file_type': 'csv',

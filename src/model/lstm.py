@@ -95,7 +95,7 @@ class Has_Risk_NFM_LSTM_MultiLabel_7d1Linear(nn.Module):
         self.continuous_transforms = nn.ModuleDict()
         
         # 定义过去7天的流产率特征
-        self.past_7d_abortion_features = [f'abortion_rate_past_{day}d' for day in range(7, 0, -1)]
+        self.past_7d_abortion_features = [f'abortion_rate_diff2_{day}d' for day in range(5, 0, -1)] 
         
         # 为流产率特征创建一个单独的线性变换
         self.abortion_rate_transform = nn.Linear(1, self.embedding_dim)

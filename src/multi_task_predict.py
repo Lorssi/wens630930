@@ -15,12 +15,14 @@ from torch.utils.data import WeightedRandomSampler
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, accuracy_score
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.model_selection import train_test_split
+from torch.utils.data import Dataset
 
 # 从项目中导入模块
 from configs.logger_config import logger_config
 from configs.feature_config import ColumnsConfig, DataPathConfig
+from configs.pigfarm_risk_prediction_config import TrainModuleConfig, PredictModuleConfig, EvalModuleConfig, algo_interim_dir
 import config
-from dataset.dataset import HasRiskDataset, MultiTaskDataset
+from dataset.dataset import HasRiskDataset, MultiTaskAndMultiLabelDataset, MultiTaskAndMultiLabelPredictDataset
 from utils.logger import setup_logger
 from utils.early_stopping import EarlyStopping
 from utils.save_csv import save_to_csv, read_csv
@@ -28,9 +30,14 @@ from feature.gen_feature import FeatureGenerator
 from feature.gen_label import LabelGenerator
 from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
-from model.nfm import Has_Risk_NFM
-from model.multi_task_nfm import Multi_Task_NFM
+from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel, Has_Risk_NFM_MultiLabel_7d1Linear
+from model.risk_wider_nfm import Has_Risk_NFM_MultiLabel_Wider
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
+from model.combined_train_nfm import RiskDaysCombinedModel
+
+from dataset.risk_prediction_index_sample_dataset import RiskPredictionIndexSampleDataset
+from dataset.risk_prediction_feature_dataset import RiskPredictionFeatureDataset
+from module.future_generate_main import FeatureGenerateMain
 # 设置浮点数显示为小数点后2位，抑制科学计数法
 # np.set_printoptions(precision=2, suppress=True)
 
@@ -42,6 +49,44 @@ if torch.cuda.is_available():
 
 # 初始化日志
 logger = setup_logger(logger_config.PREDICT_LOG_FILE_PATH, logger_name="TrainLogger")
+
+class MultiTaskDataset(Dataset):
+    """
+    多任务数据集类，用于多任务学习模型训练
+    
+    Args:
+        features (numpy.ndarray): 特征序列数据，形状为 (样本数, 序列长度, 特征数)
+        labels (numpy.ndarray): 标签数据，形状为 (样本数,)
+        transform (callable, optional): 可选的数据转换函数
+    """
+    def __init__(self, df: pd.DataFrame):
+        self.df = df
+        
+    def __len__(self):
+        """返回数据集大小"""
+        return len(self.df)
+    
+    def __getitem__(self, idx):
+        """获取单个样本"""
+        row = self.df.iloc[idx]
+        feature = row.values
+            
+        return feature
+
+def _collate_fn(batch):
+    # 初始化列表
+    features_list = []
+    
+    for feature in batch:
+        # 添加特征
+        features_list.append(feature)
+        
+    
+    # 转换为张量
+    features_tensor = torch.tensor(np.array(features_list), dtype=torch.float32)
+    
+    # 返回特征和所有标签
+    return features_tensor
 
     # 针对空值做处理
 def mask_feature_null(data = None, mode='train'):
@@ -80,7 +125,7 @@ def mask_feature_null(data = None, mode='train'):
 
 
 def predict_model(model, predict_loader, device, predict_index):
-    logger.info("开始预测...")
+    logger.info("开始多标签预测...")
     
     # 加载训练好的模型权重
     if os.path.exists(config.MODEL_SAVE_PATH):
@@ -99,18 +144,18 @@ def predict_model(model, predict_loader, device, predict_index):
     
     # 不计算梯度，提高效率
     with torch.no_grad():
-        for inputs, _, _, _, _ in tqdm(predict_loader, desc="预测进度"):
+        for inputs in tqdm(predict_loader, desc="预测进度"):
             # 将输入数据移动到指定设备
             inputs = inputs.to(device)
             
             # 前向传播，获取模型输出
-            outputs, _, _ ,_ = model(inputs)
+            outputs, _, _, _ = model(inputs)
             
-            # 应用softmax获取概率
-            probs = torch.softmax(outputs, dim=1)
+            # 多标签任务使用sigmoid获取各标签概率
+            probs = torch.sigmoid(outputs)
             
-            # 获取预测类别
-            _, predicted = torch.max(outputs, 1)
+            # 使用阈值0.5获取二值化预测结果
+            predicted = (probs > 0.5).float()
             
             # 将张量转移到CPU并转换为NumPy数组
             probs_np = probs.cpu().numpy()
@@ -121,8 +166,8 @@ def predict_model(model, predict_loader, device, predict_index):
             all_probs.append(probs_np)
     
     # 合并所有批次的预测结果
-    predictions = np.concatenate(all_predictions)
-    probabilities = np.concatenate(all_probs)
+    predictions = np.vstack(all_predictions)
+    probabilities = np.vstack(all_probs)
 
     # 添加安全检查，确保长度一致
     if len(predictions) != len(predict_index):
@@ -131,85 +176,86 @@ def predict_model(model, predict_loader, device, predict_index):
     
     logger.info(f"预测完成，共预测 {len(predictions)} 个样本")
     
-    # 将预测结果添加到预测索引DataFrame中
-    predict_index['predicted_class'] = predictions
+    # 获取标签名称
+    periods = [(1, 7), (8, 14), (15, 21)]
+    label_names = [ColumnsConfig.HAS_RISK_4_CLASS_PRE.format(left, right) for left, right in periods]
     
-    # 添加四个类别的概率列
-    for i in range(4):
-        predict_index[f'prob_class_{i}'] = probabilities[:, i]
+    # 将预测结果添加到预测索引DataFrame中
+    for i, label_name in enumerate(label_names):
+        predict_index[f'{label_name}_decision'] = predictions[:, i]
+        predict_index[f'{label_name}_pred'] = probabilities[:, i]
+        predict_index[f'{label_name}_threshold'] = 0.5
     
     # 输出预测统计信息
-    logger.info(f"预测类别分布:\n{predict_index['predicted_class'].value_counts()}")
+    for i, label in enumerate(label_names):
+        pos_count = np.sum(predictions[:, i])
+        logger.info(f"{label} 预测分布: 正例={pos_count}, 负例={len(predictions)-pos_count}")
     
     return predict_index
 
 if __name__ == "__main__":
     logger.info("开始数据加载和预处理...")
+    index_df = pd.read_csv(config.main_predict.PREDICT_INDEX_TABLE, encoding='utf-8-sig')
+
+    if index_df is None:
+        logger.error("索引数据加载失败，程序退出。")
+        exit()
+    logger.info(f"索引数据从{config.main_predict.PREDICT_INDEX_TABLE}加载成功，数据行数：{len(index_df)}")
+    logger.info(f"索引数据的列为：{index_df.columns}")
+    index_df['stats_dt'] = pd.to_datetime(index_df['stats_dt'], format='%Y-%m-%d', errors='coerce')
+
+    max_date = index_df['stats_dt'].max()
+    min_date = index_df['stats_dt'].min()
+    logger.info(f"索引数据的最小日期为：{min_date}, 最大日期为：{max_date}")
+    predict_running_dt = max_date + pd.Timedelta(days=1)  # 预测运行日期为最大日期的下一天
+    predict_interval = index_df['stats_dt'].nunique()  # 预测区间为索引数据的唯一日期数
+    logger.info(f"预测运行日期为：{predict_running_dt}, 预测区间为：{predict_interval}天")
+
     # 1. 加载和基础预处理数据
     # 生成特征
-    feature_generator = FeatureGenerator(running_dt=config.main_predict.PREDICT_RUNNING_DT, interval_days=config.main_predict.PREDICT_INTERVAL)
-    feature_df = feature_generator.generate_features()
-
-     # 生成lable
-    label_generator = LabelGenerator(
-        feature_data=feature_df,
-        running_dt=config.main_predict.PREDICT_RUNNING_DT,
-        interval_days=config.main_predict.PREDICT_INTERVAL,
+    feature_gen_main = FeatureGenerateMain(
+        running_dt=predict_running_dt.strftime('%Y-%m-%d'),
+        origin_feature_precompute_interval=predict_interval - 1,
+        logger=logger
     )
-    logger.info("开始生成标签...")
-    X, y = label_generator.has_risk_4_class_period_generate_label_alter()
-    X.reset_index(drop=True, inplace=True)
-    y.reset_index(drop=True, inplace=True)
-    predict_index_label = pd.concat([X, y], axis=1)
-    logger.info(f"预测数据的索引为：{predict_index_label.columns}")
+    feature_gen_main.generate_feature()  # 生成特征
+
+    connect_feature_obj = RiskPredictionFeatureDataset()
+    logger.info("----------Generating train dataset----------")
+    prdict_connect_feature_data = connect_feature_obj.build_train_dataset(input_dataset=index_df.copy(), param=None)
+    logger.info(f"预测特征数据的行数为：{len(prdict_connect_feature_data)}")
+
+    predict_connect_feature_data = prdict_connect_feature_data.reset_index(drop=True)
+    logger.info(f"预测特征数据的列为：{predict_connect_feature_data.columns}")
+
+    predict_index_label = index_df.copy()
+    predict_connect_feature_data.to_csv(
+        DataPathConfig.PREDICT_INDEX_MERGE_FEATURE_DATA_SAVE_PATH,
+        index=False,
+        encoding='utf-8-sig'
+    )
 
     # transform
-    if X is None:
+    if predict_connect_feature_data is None:
         logger.error("特征数据加载失败，程序退出。")
         exit()
 
+    index_merge_df = predict_connect_feature_data[ColumnsConfig.feature_columns]
     with open(config.TRANSFORMER_SAVE_PATH, "r+") as dump_file:
         transform = AbortionPredictionTransformPipeline.from_json(dump_file.read())
-    transformed_feature_df = transform.transform(input_dataset=X)
-    # transformer = FeatureTransformer(
-    #     discrete_cols=ColumnsConfig.DISCRETE_COLUMNS,
-    #     continuous_cols=ColumnsConfig.CONTINUOUS_COLUMNS,
-    #     invariant_cols=ColumnsConfig.INVARIANT_COLUMNS,
-    #     model_discrete_cols=ColumnsConfig.MODEL_DISCRETE_COLUMNS,
-    # )
-    # transformer = transformer.load_params(config.TRANSFORMER_SAVE_PATH)
-    # transform_dict = transformer.params
+    transformed_feature_df = transform.transform(input_dataset=index_merge_df)
+    logger.info(f"特征转换完成，转换后的数据行数为：{len(transformed_feature_df)}")
 
-    # transformed_feature_df = transformer.transform(X.copy())
-    # transformed_feature_df.to_csv(
-    #     DataPathConfig.TRANSFORMED_FEATURE_DATA_SAVE_PATH,
-    #     index=False,
-    #     encoding='utf-8-sig'
-    # )
-    # logger.info(f"trainsformed_feature_df数据字段为：{transformed_feature_df.columns}")
-
-    # 保存离散特征类别数用于embedding
-    # discrete_class_num = transformer.discrete_column_class_count(transformed_feature_df)
-    # logger.info(f"离散特征的类别数量: {discrete_class_num}")
-
-    # 预测数据
     predict_X = transformed_feature_df.copy()
     predict_X = predict_X[ColumnsConfig.feature_columns]
-
-    periods = [(1, 7), (8, 14), (15, 21)]
-    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(start, end) for start, end in periods]
-    predict_y = y.copy()
-    predict_y = predict_y[[ColumnsConfig.HAS_RISK_LABEL] + days_label_list]
 
     # 生成mask列
     transformed_masked_null_predict_X = mask_feature_null(data=predict_X, mode='predict')
     transformed_masked_null_predict_X.fillna(0, inplace=True)  # 填充空值为0
     logger.info(f"data_transformed_masked_null数据字段为：{transformed_masked_null_predict_X.columns}")
+    logger.info(f"data_transformed_masked_null数据行数为：{len(transformed_masked_null_predict_X)}")
     
-    predict_df = pd.concat([transformed_masked_null_predict_X, predict_y], axis=1)
-    predict_df = predict_df.reset_index(drop=True)
-    logger.info(f"预测数据的索引为：{predict_df.columns}")
-    predict_df.to_csv(
+    transformed_masked_null_predict_X.to_csv(
         DataPathConfig.PREDICT_DATA_TRANSFORMED_MASK_NULL_PREDICT_PATH,
         index=False,
         encoding='utf-8-sig'
@@ -224,33 +270,42 @@ if __name__ == "__main__":
     # logger.info("数据预处理完成.")
 
     # 5. 创建 PyTorch Dataset 和 DataLoader
-    predict_dataset = MultiTaskDataset(predict_df, label=[ColumnsConfig.HAS_RISK_LABEL] + days_label_list)
+    predict_dataset = MultiTaskDataset(transformed_masked_null_predict_X)
 
-    predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
+    predict_loader = DataLoader(predict_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=_collate_fn,num_workers=config.NUM_WORKERS) # Windows下 num_workers>0 可能有问题
     logger.info("数据加载器准备完毕.")
 
     # --- 模型、损失函数、优化器 ---
     feature_dict = transform.features.features
     Categorical_feature = ColumnsConfig.DISCRETE_COLUMNS # 离散值字段
-    logger.info(f"pigfarm_dk类别数：{feature_dict[Categorical_feature[0]].category_encode.size}")
     params = {
         'model_discrete_columns': ColumnsConfig.MODEL_DISCRETE_COLUMNS,
         'model_continuous_columns': ColumnsConfig.MODEL_CONTINUOUS_COLUMNS,
         'dropout': config.DROPOUT,
 
         'pigfarm_dk': feature_dict[Categorical_feature[0]].category_encode.size,
-        'province': feature_dict[Categorical_feature[1]].category_encode.size,
-        'city': feature_dict[Categorical_feature[2]].category_encode.size,
-        'month': 12,
-        'is_single': 2,
+        'city': feature_dict[Categorical_feature[1]].category_encode.size,
+        'season': 4,
     }
-    model = Multi_Task_NFM(params).to(config.DEVICE) # 等待模型实现
+    model = RiskDaysCombinedModel(params).to(config.DEVICE) # 等待模型实现
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
-    predict_df = predict_model(model, predict_loader, config.DEVICE, predict_index_label)
+    predict_df = predict_model(model, predict_loader, config.DEVICE, transformed_feature_df)
+    predict_df = predict_df[ColumnsConfig.MAIN_PREDICT_TEST_WITH_INDEX_DATA_COLUMN]  # 只保留需要的列
+    logger.info(f"预测结果行数为：{len(predict_df)}")
+
+    # feature_df = pd.read_csv(algo_interim_dir / "risk_train_connected_feature_data.csv", encoding='utf-8-sig')
+    # feature_df = feature_df[['stats_dt'] + ColumnsConfig.feature_columns]
+    # feature_df['stats_dt'] = pd.to_datetime(feature_df['stats_dt'], errors='coerce')
+    # predict_df = predict_df.merge(feature_df, on=['pigfarm_dk', 'stats_dt'], how='left')
 
     # 保存预测结果
+    predict_df = predict_df.rename(columns={
+        'pigfarm_dk': 'pigfarm_dk_transfrom',
+    })
+    predict_df = pd.concat([predict_index_label.reset_index(drop=True), predict_df.reset_index(drop=True)], axis=1)
+    logger.info(f"concat后的预测结果行数为：{len(predict_df)}")
     save_to_csv(df=predict_df, filepath=config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH)
     logger.info(f"预测结果已保存至: {config.main_predict.HAS_RISK_PREDICT_RESULT_SAVE_PATH}")

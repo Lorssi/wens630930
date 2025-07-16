@@ -15,6 +15,7 @@ from torch.utils.data import WeightedRandomSampler
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, accuracy_score
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.model_selection import train_test_split
+import torch.nn.functional as F
 
 # 从项目中导入模块
 from configs.logger_config import logger_config
@@ -46,6 +47,119 @@ if torch.cuda.is_available():
 
 # 初始化日志
 logger = setup_logger(logger_config.TRAIN_LOG_FILE_PATH, logger_name="TrainLogger")
+
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=None, gamma=2.0, reduction='mean'):
+        """
+        Focal Loss 实现
+        
+        Args:
+            alpha: 类别权重，可以是一个列表，为每个类别指定权重，处理类别不平衡
+            gamma: 聚焦参数，提高对困难样本的关注度
+            reduction: 损失计算方式，'mean'、'sum'或'none'
+        """
+        super(FocalLoss, self).__init__()
+        self.gamma = gamma
+        self.reduction = reduction
+        self.alpha = alpha
+        if alpha is not None:
+            if isinstance(alpha, list):
+                self.alpha = torch.tensor(alpha)
+            self.alpha = self.alpha.to(config.DEVICE)
+    
+    def forward(self, input, target):
+        # 计算交叉熵损失
+        ce_loss = F.cross_entropy(input, target, reduction='none', weight=self.alpha)
+        
+        # 获取目标类的概率
+        pt = torch.exp(-ce_loss)
+        
+        # 计算Focal Loss
+        focal_loss = (1 - pt) ** self.gamma * ce_loss
+        
+        # 根据reduction方式处理损失
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
+def calculate_class_weights(y_data, num_classes=8, method='inverse'):
+    """
+    计算类别权重，用于处理类别不平衡问题
+    
+    Args:
+        y_data: 训练数据的标签，可以是一个pandas DataFrame或Series或numpy数组
+        num_classes: 类别总数
+        method: 权重计算方法，可选'inverse'(频率倒数),'log'(对数加权),'effective'(有效数量)
+        
+    Returns:
+        torch.Tensor: 每个类别的权重
+    """
+    # 确保y_data是numpy数组
+    if isinstance(y_data, pd.DataFrame) or isinstance(y_data, pd.Series):
+        y_data = y_data.values
+
+    # 将浮点标签转换为整数 - 添加这一行解决错误
+    y_data = y_data.astype(np.int64)
+    
+    # 计算每个类别的样本数量
+    class_counts = np.bincount(y_data.flatten(), minlength=num_classes)
+    
+    # 处理零样本情况，避免除零错误
+    class_counts = np.where(class_counts == 0, 1, class_counts)
+    
+    if method == 'inverse':
+        # 频率倒数: 样本越少，权重越大
+        weights = 1.0 / class_counts
+        # 归一化权重（使总和为num_classes）
+        weights = weights * (num_classes / weights.sum())
+    
+    elif method == 'log':
+        # 对数权重: 减轻极端不平衡的影响
+        N = y_data.size
+        weights = np.log(N / class_counts)
+        # 处理可能的零或负值
+        weights = np.where(weights <= 0, 1e-6, weights)
+    
+    elif method == 'effective':
+        # 有效样本数: 介于倒数和对数之间的折中方案
+        weights = 1.0 / np.sqrt(class_counts)
+        # 归一化
+        weights = weights * (num_classes / weights.sum())
+    
+    else:
+        raise ValueError(f"不支持的计算方法: {method}")
+    
+    logger.info(f"计算的类别权重 ({method}): {weights}")
+    
+    return torch.tensor(weights, dtype=torch.float32)
+
+# 计算每个任务的类别权重
+def calculate_all_task_weights(train_y, num_classes=8, method='inverse'):
+    """
+    为所有三个任务计算类别权重
+    
+    Args:
+        train_y: 包含三个任务标签的DataFrame
+        num_classes: 每个任务的类别数
+        method: 权重计算方法
+        
+    Returns:
+        dict: 包含三个任务权重的字典
+    """
+    periods = [(1, 7), (8, 14), (15, 21)]
+    days_label_list = [ColumnsConfig.DAYS_RISK_8_CLASS_PRE.format(start, end) for start, end in periods]
+    
+    weights = {}
+    for i, label_col in enumerate(days_label_list):
+        task_name = f"task_{periods[i][0]}_{periods[i][1]}"
+        task_weights = calculate_class_weights(train_y[label_col], num_classes, method)
+        weights[task_name] = task_weights
+        logger.info(f"{task_name} 类别分布: {np.bincount(train_y[label_col], minlength=num_classes)}")
+        
+    return weights
 
 def _collate_fn(batch):
     # 初始化列表
@@ -134,8 +248,10 @@ def split_data(data_transformed_masked_null, y):
 
     return train_X, test_X, train_y, test_y
 
-def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, device, early_stopping=None):
+def train_model(model, train_loader, val_loader, criterions, optimizer, num_epochs, device, early_stopping=None):
     logger.info("开始训练...")
+    # 解包三个损失函数
+    criterion_1_7, criterion_8_14, criterion_15_21 = criterions
     
     for epoch in range(num_epochs):
         model.train()
@@ -145,9 +261,9 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
 
             optimizer.zero_grad()
             days_1_7_output, days_8_14_output, days_15_21_output = model(features)
-            days_1_7_loss = criterion(days_1_7_output, days_1_7)
-            days_8_14_loss = criterion(days_8_14_output, days_8_14)
-            days_15_21_loss = criterion(days_15_21_output, days_15_21)
+            days_1_7_loss = criterion_1_7(days_1_7_output, days_1_7)
+            days_8_14_loss = criterion_8_14(days_8_14_output, days_8_14)
+            days_15_21_loss = criterion_15_21(days_15_21_output, days_15_21)
 
             days_loss = (days_1_7_loss + days_8_14_loss + days_15_21_loss) / 3
             loss = days_loss
@@ -159,7 +275,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         avg_train_loss = train_loss / len(train_loader)
 
         # --- 验证阶段 ---
-        avg_val_loss, metrics = eval(model, val_loader, criterion, device)
+        avg_val_loss, metrics = eval(model, val_loader, criterions, device)
         
         # 打印训练指标 - 显示平均指标
         logger.info(f"Epoch [{epoch+1}/{num_epochs}], 训练集平均损失：{avg_train_loss:.4f}, 验证集平均损失: {avg_val_loss:.4f}")
@@ -184,8 +300,8 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         model.load_state_dict(torch.load(early_stopping.path))
     
     # --- 最终评估 ---
-    avg_train_loss, train_metrics = eval(model, train_loader, criterion, device)
-    avg_val_loss, val_metrics = eval(model, val_loader, criterion, device)
+    avg_train_loss, train_metrics = eval(model, train_loader, criterions, device)
+    avg_val_loss, val_metrics = eval(model, val_loader, criterions, device)
     
     # --- 打印最终评估结果（详细版本）---
     logger.info(f"最终评估 - 训练集损失: {avg_train_loss:.4f}, 验证集损失: {avg_val_loss:.4f}")
@@ -205,10 +321,12 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
     logger.info("训练完成.")
     return model
 
-def eval(model, val_loader, criterion, device):
+def eval(model, val_loader, criterions, device):
     """
     评估模型在验证集上的性能（多任务版本 - 评估三个时段的预测结果）
     """
+    criterion_1_7, criterion_8_14, criterion_15_21 = criterions
+
     model.eval()
     val_loss = 0.0
     
@@ -236,9 +354,9 @@ def eval(model, val_loader, criterion, device):
             days_1_7_output, days_8_14_output, days_15_21_output = model(features)
             
             # 计算损失
-            days_1_7_loss = criterion(days_1_7_output, days_1_7)
-            days_8_14_loss = criterion(days_8_14_output, days_8_14)
-            days_15_21_loss = criterion(days_15_21_output, days_15_21)
+            days_1_7_loss = criterion_1_7(days_1_7_output, days_1_7)
+            days_8_14_loss = criterion_8_14(days_8_14_output, days_8_14)
+            days_15_21_loss = criterion_15_21(days_15_21_output, days_15_21)
             total_loss = (days_1_7_loss + days_8_14_loss + days_15_21_loss) / 3
             val_loss += total_loss.item()
             
@@ -449,7 +567,18 @@ if __name__ == "__main__":
     logger.info("模型初始化完成.")
     logger.info(f"模型结构:\n{model}")
 
-    criterion = nn.CrossEntropyLoss()  # 假设是回归任务，使用均方误差
+    # criterion = nn.CrossEntropyLoss()  # 假设是回归任务，使用均方误差
+    # 根据数据分布设置权重，假设类别0和7频率高
+    # class_weights = [0.2, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 0.5]  # 根据实际分布调整
+    # criterion = FocalLoss(alpha=class_weights, gamma=2.0)
+
+    task_weights = calculate_all_task_weights(train_y, num_classes=8, method='effective')
+    # 创建三个任务的损失函数
+    criterion_1_7 = FocalLoss(alpha=task_weights['task_1_7'], gamma=2.0)
+    criterion_8_14 = FocalLoss(alpha=task_weights['task_8_14'], gamma=2.0)
+    criterion_15_21 = FocalLoss(alpha=task_weights['task_15_21'], gamma=2.0)
+    criterions = (criterion_1_7, criterion_8_14, criterion_15_21)
+
     optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)  # L2正则化
 
     # 初始化早停器
@@ -462,7 +591,7 @@ if __name__ == "__main__":
     )
 
     # --- 开始训练 (当前被注释掉，因为模型未定义) ---
-    trained_model = train_model(model, train_loader, val_loader, criterion, optimizer, config.NUM_EPOCHS, config.DEVICE, early_stopping=early_stopping)
+    trained_model = train_model(model, train_loader, val_loader, criterions, optimizer, config.NUM_EPOCHS, config.DEVICE, early_stopping=early_stopping)
 
     # --- 模型评估 (可选，在测试集上) ---
     # ...

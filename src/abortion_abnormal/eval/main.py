@@ -780,6 +780,6 @@ if __name__ == "__main__":
     # train_predict_data = pd.read_csv('data/predict/abort_abnormal/v1.0.t train/v1.0.t train 12/abort_abnormal.csv')
     # all_pigfarm_evaluate(version=['v1.0.t'], features=['train'], predict_data=train_predict_data, pigfarm_dks=pigfarm_dks)
 
-    all_pigfarm_evaluate_v3()
+    all_pigfarm_evaluate(version=['v1.0.49'], features=['abortion_abnormal_window_expand14'])
 
 

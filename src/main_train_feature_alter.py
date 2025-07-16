@@ -219,6 +219,81 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
     logger.info("训练完成.")
     return model
 
+# def eval(model, val_loader, criterion, device):
+#     """
+#     评估模型在验证集上的性能（支持连续值标签和二分类标签混合）
+#     """
+#     model.eval()
+#     val_loss = 0.0
+#     all_preds = []
+#     all_targets = []
+#     all_probs = []
+    
+#     with torch.no_grad():
+#         for features, targets in val_loader:
+#             # 获取批次数据并移至目标设备
+#             features, targets = features.to(device), targets.to(device)
+            
+#             # 前向传播
+#             outputs = model(features)
+#             loss = criterion(outputs, targets)
+#             val_loss += loss.item()
+            
+#             # 获取预测结果 - 使用sigmoid
+#             probs = torch.sigmoid(outputs)
+#             preds = (probs > 0.5).float()  # 二值化，阈值为0.5
+            
+#             # 收集结果
+#             all_preds.append(preds.cpu().numpy())
+#             all_targets.append(targets.cpu().numpy())
+#             all_probs.append(probs.cpu().numpy())
+    
+#     # 计算平均损失
+#     avg_val_loss = val_loss / len(val_loader)
+    
+#     # 转换为numpy数组
+#     all_preds = np.vstack(all_preds)
+#     all_targets = np.vstack(all_targets)
+#     all_probs = np.vstack(all_probs)
+    
+#     # 为评估指标，将真实标签二值化（>0.5为1，否则为0）
+#     binary_targets = (all_targets > 0.5).astype(int)
+    
+#     # 计算多标签指标（使用二值化后的标签）
+#     accuracy = accuracy_score(binary_targets, all_preds)
+#     precision = precision_score(binary_targets, all_preds, average='macro', zero_division=0)
+#     recall = recall_score(binary_targets, all_preds, average='macro', zero_division=0)
+#     f1 = 2 * (precision * recall) / (precision + recall + 1e-10)
+    
+#     # 多标签 AUC
+#     try:
+#         # 对每个标签分别计算ROC AUC，然后取平均
+#         auc_scores = []
+#         for i in range(all_probs.shape[1]):
+#             # 只有当某个标签既有正例又有负例时才计算AUC
+#             if len(np.unique(binary_targets[:, i])) > 1:
+#                 auc_scores.append(roc_auc_score(binary_targets[:, i], all_probs[:, i]))
+        
+#         auc = np.mean(auc_scores) if auc_scores else 0.0
+#     except ValueError:
+#         auc = 0.0
+#         logger.warning("无法计算AUC，可能是某些类别样本数太少")
+    
+#     # 额外添加连续值评估指标（均方误差）
+#     mse = np.mean((all_probs - all_targets) ** 2)
+    
+#     metrics = {
+#         'val_loss': avg_val_loss,
+#         'accuracy': accuracy,
+#         'precision': precision,
+#         'recall': recall,
+#         'f1': f1,
+#         'auc': auc,
+#         'mse': mse  # 添加均方误差指标
+#     }
+    
+#     return avg_val_loss, metrics
+
 def eval(model, val_loader, criterion, device):
     """
     评估模型在验证集上的性能（多标签版本）
@@ -303,8 +378,6 @@ if __name__ == "__main__":
     logger.info("----------Generating train dataset----------")
     train_connect_feature_data = connect_feature_obj.build_train_dataset(input_dataset=train_index_data.copy(), param=None)
 
-    train_connect_feature_data = train_connect_feature_data[train_connect_feature_data['pigfarm_dk'] == 'bDoAAKurSXDM567U'] # 仅使用一个猪场数据进行测试
-
     # 1. 加载和基础预处理数据
     # 生成特征
     # feature_generator = FeatureGenerator(running_dt=config.TRAIN_RUNNING_DT, interval_days=config.TRAIN_INTERVAL)
@@ -336,8 +409,8 @@ if __name__ == "__main__":
 
     logger.info(f"train_X数据字段为：{train_X.columns}")
     logger.info(f"val_X数据字段为：{val_X.columns}")
-    param = {}
-    transform = AbortionPredictionTransformPipeline(transform_feature_names = ColumnsConfig.feature_columns) # 传入使用特征
+    transform_param = {}
+    transform = AbortionPredictionTransformPipeline(transform_feature_names = ColumnsConfig.feature_columns, feature_groups=transform_param) # 传入使用特征
 
     # 对数据集进行处理
     train_X_transformed = transform.fit_transform(input_dataset=train_X) # 离散数据与连续数据处理
