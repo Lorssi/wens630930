@@ -32,7 +32,7 @@ from transform.transform import FeatureTransformer
 from model.mlp import Has_Risk_MLP
 from model.nfm import Has_Risk_NFM, Has_Risk_NFM_MultiLabel, Has_Risk_NFM_MultiLabel_7d1Linear
 from model.multi_task_nfm import Multi_Task_NFM
-from model.lstm import Has_Risk_NFM_LSTM_MultiLabel_7d1Linear
+from model.useful_model_lstm import Has_Risk_NFM_LSTM_MultiLabel_7d1Linear
 from transform.abortion_prediction_transform import AbortionPredictionTransformPipeline
 from module.future_generate_main import FeatureGenerateMain
 

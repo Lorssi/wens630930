@@ -725,7 +725,7 @@ class RuleBaselineFeature(BaseFeatureDataSet):
             tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
 
         # 1. 过滤出有CT值的数据，减少后续处理量
-        ct_data = tame_risk_data.dropna(subset=['rqbe3_blue_ear_kypt_check_ct'])
+        ct_data = tame_risk_data.dropna(subset=['rqbe3_blue_ear_kypt_check_ct']).copy()
     
         # 2. 按猪场和日期分组计算每日CT均值
         daily_ct_avg = ct_data.groupby(['prorg_inv_dk', 'min_boar_inpop_dt'])['rqbe3_blue_ear_kypt_check_ct'].mean().reset_index()
@@ -815,7 +815,7 @@ class RuleBaselineFeature(BaseFeatureDataSet):
             tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
 
         # 1. 过滤出有CT值的数据，减少后续处理量
-        ct_data = tame_risk_data.dropna(subset=['rqbe3_blue_ear_kypt_check_ct'])
+        ct_data = tame_risk_data.dropna(subset=['rqbe3_blue_ear_kypt_check_ct']).copy()
         
         # 2. 按猪场和日期分组计算每日CT均值
         daily_ct_avg = ct_data.groupby(['prorg_inv_dk', 'min_boar_inpop_dt'])['rqbe3_blue_ear_kypt_check_ct'].mean().reset_index()
@@ -905,7 +905,7 @@ class RuleBaselineFeature(BaseFeatureDataSet):
             tame_risk_data['min_boar_inpop_dt'] = pd.to_datetime(tame_risk_data['min_boar_inpop_dt'])
 
         # 1. 过滤出有CT值的数据
-        ct_data = tame_risk_data.dropna(subset=['rqbe3_blue_ear_kypt_check_ct'])
+        ct_data = tame_risk_data.dropna(subset=['rqbe3_blue_ear_kypt_check_ct']).copy()
         
         # 2. 获取所有CT值以计算整体分布
         all_ct_values = ct_data['rqbe3_blue_ear_kypt_check_ct'].values
@@ -1105,13 +1105,13 @@ class RuleBaselineFeature(BaseFeatureDataSet):
         logger.info("-----Preprocessing data----- ")
         self._preprocessing_data()
         logger.info("Calculating check_out_3 purchase...")
-        self._get_before_tame_3d_check_out_ratio_21d_feature()
-        self._get_before_tame_3d_check_out_yd_ratio_21d_feature()
+        # self._get_before_tame_3d_check_out_ratio_21d_feature()
+        # self._get_before_tame_3d_check_out_yd_ratio_21d_feature()
         # self._get_after_tame_7d_check_out_ratio_21d_feature()
         # self._get_after_tame_7d_check_out_yd_ratio_21d_feature()
-        # self._get_before_tame_3d_ct_mean_21d_feature()
-        # self._get_before_tame_3d_ct_min_21d_feature()
-        # self._get_before_tame_3d_ct_quantile_mean_21d_feature()
+        self._get_before_tame_3d_ct_mean_21d_feature()
+        self._get_before_tame_3d_ct_min_21d_feature()
+        self._get_before_tame_3d_ct_quantile_mean_21d_feature()
         logger.info("-----Postprocessing data----- ")
         self._post_processing_data()
         # logger.info("-----Save as : {}".format("/".join([config.FEATURE_STORE_ROOT, self.file_name])))

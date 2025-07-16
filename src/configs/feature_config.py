@@ -63,12 +63,13 @@ class ColumnsConfig:
     abortion_second_diff = [f'abortion_rate_diff2_{day}d' for day in range(1, 6)]
     # TRANSFORM_FIT
     DISCRETE_COLUMNS = ['pigfarm_dk','city']
-    CONTINUOUS_COLUMNS = ['check_out_ratio_7d', 'death_confirm_2_week', 'before_tame_3d_check_out_yd_ratio_21d'] + past_7d_abortion_features 
+    CONTINUOUS_COLUMNS = ['check_out_ratio_7d', 'death_confirm_2_week', 'reserve_sow_sqty',
+                          'l3_org_inv_dk', 'month', ] + past_7d_abortion_features + abortion_first_diff + abortion_second_diff
     INVARIANT_COLUMNS = ['season']
 
     # MODEL_FIT
     MODEL_DISCRETE_COLUMNS = ['pigfarm_dk','city','season']
-    MODEL_CONTINUOUS_COLUMNS = ['check_out_ratio_7d', 'death_confirm_2_week', 'before_tame_3d_check_out_yd_ratio_21d'] + past_7d_abortion_features 
+    MODEL_CONTINUOUS_COLUMNS = ['check_out_ratio_7d', 'death_confirm_2_week'] + past_7d_abortion_features + abortion_first_diff + abortion_second_diff
     INDEX_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abortion_rate']
     
     MAIN_PREDICT_DATA_COLUMN = ['stats_dt', 'pigfarm_dk', 'abort_1_7', 'abort_8_14', 'abort_15_21', 'abort_1_7_pred', 'abort_8_14_pred', 'abort_15_21_pred',
