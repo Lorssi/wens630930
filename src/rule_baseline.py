@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 
-from abortion_abnormal.eval.build_eval_dateset import abortion_abnormal_index_sample
+from abortion_abnormal.eval.build_eval_dateset import abortion_abnormal_index_sample_v3
 
 # ads_pig_efficient_piglet_batch_analysis_day.csv 统计积压仔猪
 #     org_farm_dk：猪场数据键
@@ -229,13 +229,14 @@ class RuleBaseline:
 
 if __name__ == "__main__":
     for start_date, end_date, i in [
-        ('2024-03-01', '2024-03-30', 3),
-        ('2024-06-01', '2024-06-30', 6),
-        ('2024-09-01', '2024-09-30', 9),
-        ('2024-12-01', '2024-12-30', 12),
+        ('2024-03-01', '2024-04-30', 3),
+        ('2024-06-01', '2024-07-31', 6),
+        ('2024-09-01', '2024-10-31', 9),
+        ('2024-12-01', '2025-01-31', 12),
     ]:
-        index_sample, index_ground_truth = abortion_abnormal_index_sample(start_date, end_date)
+        index_sample, index_ground_truth = abortion_abnormal_index_sample_v3(start_date, end_date)
         baseline = RuleBaseline(start_date, end_date, index_sample)
+        print(index_sample['stats_dt'].min(), index_sample['stats_dt'].max())
         result = baseline.get_result()
         save_path = f"data/predict/abortion_abnormal/rule_baseline/v1.0.0 rule_baseline/v1.0.0 rule_baseline {i}"
         os.makedirs(save_path, exist_ok=True)

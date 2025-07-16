@@ -10,7 +10,7 @@ sys.path.append(str(project_root))
 
 from abortion_abnormal.eval.eval_base import EvalBaseMixin
 from abortion_abnormal.eval.build_eval_dateset import abortion_abnormal_index_sample, abortion_days_index_sample, abortion_abnormal_index_sample_v2
-from abortion_abnormal.eval.abortion_abnormal_predict_eval_data import AbortionAbnormalPredictEvalData
+from abortion_abnormal.eval.abortion_abnormal_predict_eval_data import AbortionAbnormalPredictEvalData, AbortionAbnormalPredictEvalData_v3
 from abortion_abnormal.eval.abortion_days_predict_eval_data import AbortionDaysPredictEvalData
 import abortion_abnormal.eval.eval_config as config
 from split_data_to_one_pigfarm import split_data_to_one_pigfarm
@@ -73,6 +73,11 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
         # delete 转化日期格式
         self.predict_data['stats_dt'] = pd.to_datetime(self.predict_data['stats_dt'])
 
+        # delete  ############################################################################################################
+        # self.sample_ground_truth = self.predict_data[['pigfarm_dk', 'stats_dt', 'abort_1_7', 'abort_8_14', 'abort_15_21']]
+        # self.predict_data.drop(columns=['abort_1_7', 'abort_8_14', 'abort_15_21'], inplace=True, errors='ignore')
+        # delete  ############################################################################################################
+
         # 获取组织分类表
         dim_org_inv = pd.read_csv("data/raw_data/dim_org_inv.csv", encoding='utf-8')
 
@@ -97,18 +102,6 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
             self.predict_data = self.predict_data[self.predict_data['pigfarm_dk'] == pdk].copy()
             self.sample_ground_truth = self.sample_ground_truth[self.sample_ground_truth['pigfarm_dk'] == pdk].copy()
 
-        # delete 将sample_ground_truth和predict_data合并，便于后续分析
-        # 创建predict_data的键组合
-        predict_keys = self.predict_data[['pigfarm_dk', 'stats_dt']].apply(
-            lambda x: f"{x['pigfarm_dk']}_{x['stats_dt']}", axis=1
-        )
-        # 创建sample_ground_truth的键组合
-        sample_keys = self.sample_ground_truth[['pigfarm_dk', 'stats_dt']].apply(
-            lambda x: f"{x['pigfarm_dk']}_{x['stats_dt']}", axis=1
-        )
-        # 保留在predict_data中存在的数据
-        self.sample_ground_truth = self.sample_ground_truth[sample_keys.isin(predict_keys)].copy()
-
 
         # tmp = self.sample_ground_truth.merge(
         #     self.predict_data,
@@ -116,6 +109,7 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
         #     how='left'
         # )
         # tmp.to_csv(f'tmp_{feature}.csv', index=False, encoding='utf-8')
+
 
 
     def get_eval_index_sample(self):
@@ -233,6 +227,188 @@ class AbortionAbnormalPredictEval(EvalBaseMixin):
                     l4_results.to_excel(writer, sheet_name='四级组织分类', index=False, float_format="%.4f")
                     abortion_duration_results.to_excel(writer, sheet_name='流产持续时长统计', index=False, float_format="%.4f")
                     abortion_interval_results.to_excel(writer, sheet_name='流产间隔统计', index=False, float_format="%.4f")
+
+        return data
+
+# 任务1评估-流产率异常预测评估_v3
+class AbortionAbnormalPredictEval_v3(EvalBaseMixin):
+    def __init__(self, logger=None):
+        self.logger = logger
+        self.eval_start_dt = None
+        self.eval_end_dt = None
+        self.index_sample = None
+        self.sample_ground_truth = None
+        self.predict_data = None
+
+
+    # 构建评测数据集
+    def build_eval_set(self, eval_start_dt, eval_end_dt, param=None, predict_data=None, use_cache = False):
+
+        self.eval_start_dt = eval_start_dt
+        self.eval_end_dt = eval_end_dt
+
+        # 获取真实值
+        self.index_sample, self.sample_ground_truth = abortion_abnormal_index_sample(self.eval_start_dt, self.eval_end_dt, use_cache=use_cache)
+        self.index_sample.to_csv(config.abortion_abnormal_eval_index_sample_save_path, index=False, encoding='utf-8')
+        self.sample_ground_truth.to_csv(config.abortion_abnormal_eval_ground_truth_save_path, index=False, encoding='utf-8')
+
+        # delete 获取预测结果
+        feature = config.EvalFilename.feature
+        if feature is None:
+            predict_file_path = "data/predict/abort_abnormal/abort_abnormal.csv"
+        else:
+            predict_file_path = f"data/predict/abort_abnormal/{config.EvalFilename.version} {feature}/{config.EvalFilename.version} {feature} {config.EvalFilename.eval_date_month}/abort_abnormal.csv"
+        if predict_data is not None:
+            # 如果传入了预测数据，则使用传入的数据
+            self.predict_data = predict_data
+        else:
+            self.predict_data = pd.read_csv(predict_file_path, encoding='utf-8')
+
+        # delete 转化日期格式
+        self.predict_data['stats_dt'] = pd.to_datetime(self.predict_data['stats_dt'])
+
+        # delete  ############################################################################################################
+        # self.sample_ground_truth = self.predict_data[['pigfarm_dk', 'stats_dt', 'abort_1_7', 'abort_8_14', 'abort_15_21']]
+        # self.predict_data.drop(columns=['abort_1_7', 'abort_8_14', 'abort_15_21'], inplace=True, errors='ignore')
+        # delete  ############################################################################################################
+
+        # 获取组织分类表
+        dim_org_inv = pd.read_csv("data/raw_data/dim_org_inv.csv", encoding='utf-8')
+
+        # 处理组织分类信息，只保留需要的列
+        org_mapping = dim_org_inv[['org_inv_dk', 'l2_org_inv_nm', 'l3_org_inv_nm', 'l4_org_inv_nm']].copy()
+
+        # 确保ID列为字符串类型以避免join时的类型不匹配问题
+        org_mapping['org_inv_dk'] = org_mapping['org_inv_dk'].astype(str)
+
+        # 将与组织数据合并，添加部门信息
+        self.sample_ground_truth = self.sample_ground_truth.merge(
+            org_mapping,
+            left_on='pigfarm_dk',
+            right_on='org_inv_dk',
+            how='left'
+        )
+
+        tmp = self.sample_ground_truth.merge(
+            self.predict_data,
+            on=['pigfarm_dk', 'stats_dt'],
+            how='left'
+        )
+        tmp.to_csv(f'tmp_{feature}.csv', index=False, encoding='utf-8')
+
+
+    def get_eval_index_sample(self):
+        return self.index_sample
+
+
+    def eval_with_index_sample(self, save_flag=True):
+        eval_dt = AbortionAbnormalPredictEvalData_v3(self.predict_data, self.sample_ground_truth, self.eval_start_dt, self.eval_end_dt, logger)
+
+        # 整体评估
+        all_sample_result = eval_dt.eval_all_samples()
+        # 整体评估-剔除非瘟数据
+        all_sample_result_exclude_feiwen = eval_dt.eval_all_samples_exclude_feiwen()
+        # 特殊样本分析
+        special_samples_result = eval_dt.eval_special_samples()
+        # 特殊样本分析-猪业一部
+        special_samples_result2 = eval_dt.eval_special_samples(l2_name=['猪业一部'])
+        # 分级组织评估
+        l2_results, l3_results, l4_results = eval_dt.eval_organizational_hierarchy()
+        # 流产持续时长统计
+        abortion_duration_results = eval_dt.calculate_abortion_duration()
+        # 流产间隔统计
+        abortion_interval_results = eval_dt.calculate_abortion_interval()
+
+        # delete 临时组合，复制方便
+        data = all_sample_result_exclude_feiwen.copy()
+        # 定义期望的eval_period顺序
+        expected_periods = ['1_7', '8_14', '15_21']
+
+        # 将specail_samples_result[sample_type]=='normal-2_to_abnormal-2'的precision,recall,f1_score,auc,special_recall列加在data后面
+        if 'sample_type' in special_samples_result.columns:
+            normal_to_abnormal = special_samples_result[special_samples_result['sample_type'] == 'normal-2_to_abnormal-2'].reset_index(drop=True).copy()
+            # 处理normal_to_abnormal数据，确保按期望顺序
+            for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
+                values = []
+                for period in expected_periods:
+                    if not normal_to_abnormal.empty and 'eval_period' in normal_to_abnormal.columns:
+                        period_data = normal_to_abnormal[normal_to_abnormal['eval_period'] == period]
+                        if not period_data.empty and col in period_data.columns:
+                            values.append(period_data[col].iloc[0])
+                        else:
+                            values.append(None)
+                    else:
+                        values.append(None)
+                data[f'normal_to_abnormal_{col}'] = values
+
+            # 将specail_samples_result[sample_type]=='abnormal-2_to_normal-2'的precision,recall,f1_score,auc,special_recall列加在data后面
+            abnormal_to_normal = special_samples_result[special_samples_result['sample_type'] == 'abnormal-2_to_normal-2'].reset_index().copy()
+            # 处理abnormal_to_normal数据，确保按期望顺序
+            for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
+                values = []
+                for period in expected_periods:
+                    if not abnormal_to_normal.empty and 'eval_period' in abnormal_to_normal.columns:
+                        period_data = abnormal_to_normal[abnormal_to_normal['eval_period'] == period]
+                        if not period_data.empty and col in period_data.columns:
+                            values.append(period_data[col].iloc[0])
+                        else:
+                            values.append(None)
+                    else:
+                        values.append(None)
+                data[f'abnormal_to_normal_{col}'] = values
+            # 将specail_samples_result[sample_type]=='abnormal_to_abnormal'的precision,recall,f1_score,auc,special_recall列加在data后面
+            abnormal_to_abnormal = special_samples_result[special_samples_result['sample_type'] == 'abnormal_to_abnormal'].reset_index().copy()
+            # 处理abnormal_to_abnormal数据，确保按期望顺序
+            for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
+                values = []
+                for period in expected_periods:
+                    if not abnormal_to_abnormal.empty and 'eval_period' in abnormal_to_abnormal.columns:
+                        period_data = abnormal_to_abnormal[abnormal_to_abnormal['eval_period'] == period]
+                        if not period_data.empty and col in period_data.columns:
+                            values.append(period_data[col].iloc[0])
+                        else:
+                            values.append(None)
+                    else:
+                        values.append(None)
+                data[f'abnormal_to_abnormal_{col}'] = values
+        else:
+            for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
+                data[f'normal_to_abnormal_{col}'] = None
+                data[f'abnormal_to_normal_{col}'] = None
+                data[f'abnormal_to_abnormal_{col}'] = None
+        # 将l2_results[l2_name]=='猪业一部'的stats_dt,l2_name,total_sample_num,remain_sample_num,eval_period,precision,recall,f1_score,auc,recognition列加在data后面
+        pig_dept = l2_results[l2_results['l2_name'] == '猪业一部'].reset_index().copy()
+        if not pig_dept.empty:
+            cols_to_add = ['stats_dt', 'l2_name', 'total_sample_num', 'remain_sample_num',
+                        'eval_period', 'precision', 'recall', 'f1_score', 'auc', 'recognition']
+            for col in cols_to_add:
+                if col in pig_dept.columns:
+                    data[f'pig_dept_{col}'] = pig_dept[col]
+        # 将specail_samples_result2[sample_type]=='normal-2_to_abnormal-2'的precision,recall,f1_score,auc,special_recall列加在data后面
+        if 'sample_type' in special_samples_result2.columns:
+            normal_to_abnormal2 = special_samples_result2[special_samples_result2['sample_type'] == 'normal-2_to_abnormal-2'].reset_index().copy()
+            if not normal_to_abnormal2.empty:
+                for col in ['precision', 'recall', 'f1_score', 'auc', 'special_recall']:
+                    if col in normal_to_abnormal2.columns:
+                        data[f'normal_to_abnormal_2_{col}'] = normal_to_abnormal2[col]
+
+
+        # 保存结果
+        if config.EvalFilename.feature is not None:
+            suffix = f"{self.eval_start_dt}_{config.EvalFilename.feature}"
+        else:
+            suffix = self.eval_start_dt
+        if save_flag:
+            with pd.ExcelWriter(config.abortion_abnormal_eval_result_save_path.format(config.EvalFilename.version, suffix)) as writer:
+                all_sample_result.to_excel(writer, sheet_name='整体', index=False)
+                all_sample_result_exclude_feiwen.to_excel(writer, sheet_name='整体-剔除非瘟数据', index=False, float_format="%.4f")
+                special_samples_result.to_excel(writer, sheet_name='特殊样本分析', index=False, float_format="%.4f")
+                special_samples_result2.to_excel(writer, sheet_name='特殊样本分析-猪业一部', index=False, float_format="%.4f")
+                l2_results.to_excel(writer, sheet_name='二级组织分类', index=False, float_format="%.4f")
+                l3_results.to_excel(writer, sheet_name='三级组织分类', index=False, float_format="%.4f")
+                l4_results.to_excel(writer, sheet_name='四级组织分类', index=False, float_format="%.4f")
+                abortion_duration_results.to_excel(writer, sheet_name='流产持续时长统计', index=False, float_format="%.4f")
+                abortion_interval_results.to_excel(writer, sheet_name='流产间隔统计', index=False, float_format="%.4f")
 
         return data
 
@@ -355,12 +531,18 @@ class AbortionAbnormalEval(EvalBaseMixin):
 def all_pigfarm_evaluate(version=None, features=None, predict_data=None, pigfarm_dks=None):
     if version is None:
         version = [
-            'v1.0.48',
+            'v1.0.66',
+            'v1.0.67',
+            'v1.0.68',
+            'v1.0.69',
         ]
 
     if features is None:
         features = [
-            'abortion_use_lstm',
+            'immu_count_30d',
+            'immu_avg_delay_days_30d',
+            'immu_delay_count_30d',
+            'immu_delay_ratio_30d'
         ]
 
     for feature, version in zip(features, version):
@@ -380,7 +562,36 @@ def all_pigfarm_evaluate(version=None, features=None, predict_data=None, pigfarm
             data = abortion_abnormal_eval.eval_with_index_sample()
             eval_result = pd.concat([eval_result, data], ignore_index=True)
 
-    eval_result.to_csv(f'{config.EvalFilename.version}_nfm_{config.EvalFilename.feature}.csv', index=False, encoding='utf-8', float_format="%.4f")
+        eval_result.to_csv(f'{config.EvalFilename.version}_nfm_{config.EvalFilename.feature}.csv', index=False, encoding='utf-8', float_format="%.4f")
+
+def all_pigfarm_evaluate_v3(version=None, features=None, predict_data=None, pigfarm_dks=None):
+    if version is None:
+        version = [
+            'v1.0.0',
+        ]
+
+    if features is None:
+        features = [
+            'rule_baseline',
+        ]
+
+    for feature, version in zip(features, version):
+        eval_result = pd.DataFrame()
+        config.EvalFilename.feature = f'{feature}'
+        config.EvalFilename.version = version
+        for (start_date, end_date, month) in [
+            ('2024-03-01', '2024-04-30', '3'),
+            ('2024-06-01', '2024-07-31', '6'),
+            ('2024-09-01', '2024-10-31', '9'),
+            ('2024-12-01', '2025-01-31', '12'),
+        ]:
+            config.EvalFilename.eval_date_month = month
+            abortion_abnormal_eval = AbortionAbnormalPredictEval_v3(logger)
+            abortion_abnormal_eval.build_eval_set(start_date, end_date, predict_data=predict_data)
+            data = abortion_abnormal_eval.eval_with_index_sample()
+            eval_result = pd.concat([eval_result, data], ignore_index=True)
+
+        eval_result.to_csv(f'{config.EvalFilename.version}_nfm_{config.EvalFilename.feature}.csv', index=False, encoding='utf-8', float_format="%.4f")
 
 
 def per_pigfarm_evaluate():
@@ -569,6 +780,6 @@ if __name__ == "__main__":
     # train_predict_data = pd.read_csv('data/predict/abort_abnormal/v1.0.t train/v1.0.t train 12/abort_abnormal.csv')
     # all_pigfarm_evaluate(version=['v1.0.t'], features=['train'], predict_data=train_predict_data, pigfarm_dks=pigfarm_dks)
 
-    all_pigfarm_evaluate(version=['v1.0.49'], features=['abortion_abnormal_window_expand14'])
+    all_pigfarm_evaluate_v3()
 
 
